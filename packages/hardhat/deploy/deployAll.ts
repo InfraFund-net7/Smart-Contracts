@@ -3,7 +3,7 @@ import { DeployFunction } from "hardhat-deploy/types";
 import { Contract } from "ethers";
 
 const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
-  const { deployer } = await hre.getNamedAccounts();
+  //const { deployer } = await hre.getNamedAccounts();
   const { deploy } = hre.deployments;
   const clientAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
   const auditorAddress = "0x71bE63f3384f5fb98995898A86B02Fb2426c5788";
@@ -17,7 +17,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
     autoMine: true,
   });
 
-  await hre.ethers.getContract<Contract>("SecurityToken", deployer);
+  await hre.ethers.getContract<Contract>("SecurityToken", clientAddress);
   console.log(`🔑 SecurityToken deployed at: ${securityTokenDeployment.address}`);
   console.log(`👤 Deployed by: ${clientAddress}`);
   console.log("----------------------------------------------------------------------------"); // Separator for easy readability
