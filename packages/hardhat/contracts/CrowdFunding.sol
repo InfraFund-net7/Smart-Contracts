@@ -266,28 +266,34 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
      * @dev Invest utility tokens in the project
      * @param amount Amount to invest
      */
-    function invest(uint256 amount) external nonReentrant notStopped whenFundingActive {
-        require(block.timestamp <= proposal.investmentPeriod, "Investment period over");
-        require(fundsRaised + amount <= proposal.targetAmount, "Target exceeded");
-        require(tokensPledged, "Security tokens must be pledged first");
-        require(amount > 0, "Investment amount must be greater than zero");
+function invest(uint256 amount) external nonReentrant notStopped whenFundingActive {
+    require(block.timestamp <= proposal.investmentPeriod, "Investment period over");
+    require(amount > 0, "Investment amount must be greater than zero");
+    require(tokensPledged, "Security tokens must be pledged first");
 
-        // Update state before external calls
-        investorBalances[msg.sender] += amount;
-        fundsRaised += amount;
-        
-        // Assign energy tokens but don't transfer them yet
-        pendingEnergyTokens[msg.sender] += amount;
-        
-        // Use safeTransferFrom to avoid reentrancy
-        utilityToken.safeTransferFrom(msg.sender, address(this), amount);
-        emit InvestmentReceived(msg.sender, amount);
+    uint256 raised = fundsRaised;
+    require(raised + amount <= proposal.targetAmount, "Target exceeded");
 
-        if (fundsRaised >= proposal.targetAmount && !fundingSuccessful) {
-            fundingSuccessful = true;
-            emit FundingSuccessful();
-        }
+    // Check user's allowance and balance *before* modifying state
+    require(utilityToken.allowance(msg.sender, address(this)) >= amount, "Insufficient allowance");
+    require(utilityToken.balanceOf(msg.sender) >= amount, "Insufficient balance");
+
+    // Update state variables **before** external call
+    investorBalances[msg.sender] += amount;
+    fundsRaised = raised + amount;
+    pendingEnergyTokens[msg.sender] += amount;
+
+    // Execute external call safely after state update
+    utilityToken.safeTransferFrom(msg.sender, address(this), amount);
+
+    emit InvestmentReceived(msg.sender, amount);
+
+    // Mark funding as successful if target reached
+    if (fundsRaised >= proposal.targetAmount && !fundingSuccessful) {
+        fundingSuccessful = true;
+        emit FundingSuccessful();
     }
+}
 
     /**
      * @dev Release energy tokens to investors after successful funding
