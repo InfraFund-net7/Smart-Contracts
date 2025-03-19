@@ -16,6 +16,7 @@ import "./IEnergyToken.sol";
  */
 contract CrowdFunding is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
+    using SafeERC20 for IEnergyToken;
     using ECDSA for bytes32;
 
     struct Proposal {
@@ -93,6 +94,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event ExtraFundRequestExecuted(uint256 indexed requestId, bool approved);
     event RefundClaimed(address indexed investor, uint256 amount);
     event SecurityTokensWithdrawn(address indexed generalContractor, uint256 amount);
+    event EnergyTokensClaimed(address indexed investor, uint256 amount);
 
     /**
      * @dev Modifier to check if emergency stop is not activated
@@ -262,69 +264,80 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     }
 
 
-    /**
-     * @dev Invest utility tokens in the project
-     * @param amount Amount to invest
-     */
-function invest(uint256 amount) external nonReentrant notStopped whenFundingActive {
-    require(block.timestamp <= proposal.investmentPeriod, "Investment period over");
-    require(amount > 0, "Investment amount must be greater than zero");
-    require(tokensPledged, "Security tokens must be pledged first");
+function invest(uint256 amount) external nonReentrant notStopped whenFundingActive returns (bool success) {
+    // Validate investment amount and conditions
+    require(amount > 0, "INVEST: Amount must be greater than zero");
+    require(tokensPledged, "INVEST: Security tokens not pledged");
+    require(block.timestamp <= proposal.investmentPeriod, "INVEST: Investment period has ended");
 
-    uint256 raised = fundsRaised;
-    require(raised + amount <= proposal.targetAmount, "Target exceeded");
+    // Check if the target amount will be exceeded
+    uint256 newTotalRaised = fundsRaised + amount;
+    require(newTotalRaised <= proposal.targetAmount, "INVEST: Funding target exceeded");
 
-    // Check user's allowance and balance *before* modifying state
-    require(utilityToken.allowance(msg.sender, address(this)) >= amount, "Insufficient allowance");
-    require(utilityToken.balanceOf(msg.sender) >= amount, "Insufficient balance");
+    // Ensure the user has sufficient balance and allowance
+    require(utilityToken.allowance(msg.sender, address(this)) >= amount, "INVEST: Insufficient allowance");
+    require(utilityToken.balanceOf(msg.sender) >= amount, "INVEST: Insufficient balance");
 
-    // Update state variables **before** external call
+    // Update contract state before making external calls (gas optimization)
     investorBalances[msg.sender] += amount;
-    fundsRaised = raised + amount;
+    fundsRaised = newTotalRaised;
     pendingEnergyTokens[msg.sender] += amount;
 
-    // Execute external call safely after state update
+    // Transfer the tokens to the contract (use SafeERC20 for added safety)
     utilityToken.safeTransferFrom(msg.sender, address(this), amount);
 
+    // Emit event for investment received
     emit InvestmentReceived(msg.sender, amount);
 
-    // Mark funding as successful if target reached
-    if (fundsRaised >= proposal.targetAmount && !fundingSuccessful) {
+    // Check if the funding goal is reached and release energy tokens automatically
+    if (newTotalRaised >= proposal.targetAmount && !fundingSuccessful) {
         fundingSuccessful = true;
         emit FundingSuccessful();
+
+        // Automatically release energy tokens to all investors
+        _releaseEnergyTokens();
     }
+
+    return true;
+}
+
+// Add this function to your CrowdFunding contract
+
+/**
+ * @dev Internal function to release energy tokens when funding is successful
+ */
+function _releaseEnergyTokens() internal {
+    require(fundingSuccessful, "Funding must be successful to release tokens");
+    require(!energyTokensReleased, "Energy tokens already released");
+    
+    // Mark tokens as released
+    energyTokensReleased = true;
+    
+    // Emit event for energy tokens released
+    emit EnergyTokensReleased();
+}
+
+/**
+ * @dev Allow investors to claim their energy tokens
+ * @return bool Success of the claim
+ */
+function claimEnergyTokens() external nonReentrant returns (bool) {
+    require(fundingSuccessful, "Funding must be successful to claim tokens");
+    require(energyTokensReleased, "Energy tokens not yet released");
+    require(pendingEnergyTokens[msg.sender] > 0, "No energy tokens to claim");
+    
+    uint256 amount = pendingEnergyTokens[msg.sender];
+    pendingEnergyTokens[msg.sender] = 0;
+    
+    // Transfer energy tokens to the investor
+    energyToken.transfer(msg.sender, amount);
+    
+    emit EnergyTokensClaimed(msg.sender, amount);
+    return true;
 }
 
     /**
-     * @dev Release energy tokens to investors after successful funding
-     */
-    function releaseEnergyTokens() external onlyOwner nonReentrant {
-        require(fundingSuccessful, "Funding must be successful first");
-        require(!energyTokensReleased, "Energy tokens already released");
-        
-        energyTokensReleased = true;
-        emit EnergyTokensReleased();
-    }
-
-    // /**
-    //  * @dev Claim energy tokens after they've been released
-    //  */
-    // function claimEnergyTokens() external nonReentrant {
-    //     require(energyTokensReleased, "Energy tokens not released yet");
-    //     require(pendingEnergyTokens[msg.sender] > 0, "No energy tokens to claim");
-
-    //     uint256 amount = pendingEnergyTokens[msg.sender];
-    //     pendingEnergyTokens[msg.sender] = 0;
-
-    //     // Use safeTransfer from SafeERC20 to transfer tokens safely
-    //     energyToken.safeTransfer(msg.sender, amount);
-
-    //     emit EnergyTokensClaimed(msg.sender, amount);
-    // }
-
-
-    /**
-     * @dev Claim refund if funding failed
+     * @dev Claim refun if funding failed
      */
     function claimRefund() external nonReentrant {
         // Check or update funding status
@@ -340,6 +353,9 @@ function invest(uint256 amount) external nonReentrant notStopped whenFundingActi
         utilityToken.safeTransfer(msg.sender, amount);
         emit RefundClaimed(msg.sender, amount);
     }
+
+
+
 
     /**
      * @dev Withdraw security tokens if funding failed

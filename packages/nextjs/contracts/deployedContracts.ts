@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   31337: {
     CrowdFunding: {
-      address: "0xD303Ac405a2Aa1FE3A464c3a86EE562Aa5967A1F",
+      address: "0x31c91FD3540b5cE5780AFe47E442814e229BC019",
       abi: [
         {
           inputs: [
@@ -149,6 +149,25 @@ const deployedContracts = {
             },
           ],
           name: "EmergencyToggled",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "investor",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+          ],
+          name: "EnergyTokensClaimed",
           type: "event",
         },
         {
@@ -432,6 +451,19 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "claimEnergyTokens",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "claimRefund",
           outputs: [],
           stateMutability: "nonpayable",
@@ -665,7 +697,13 @@ const deployedContracts = {
             },
           ],
           name: "invest",
-          outputs: [],
+          outputs: [
+            {
+              internalType: "bool",
+              name: "success",
+              type: "bool",
+            },
+          ],
           stateMutability: "nonpayable",
           type: "function",
         },
@@ -778,13 +816,6 @@ const deployedContracts = {
             },
           ],
           stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "releaseEnergyTokens",
-          outputs: [],
-          stateMutability: "nonpayable",
           type: "function",
         },
         {

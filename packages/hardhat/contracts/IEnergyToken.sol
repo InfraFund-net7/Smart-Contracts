@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-interface IEnergyToken {
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+interface IEnergyToken is IERC20 {
     function mint(address to, uint256 amount) external;
+    function transfer(address recipient, uint256 amount) external returns (bool);
 }
