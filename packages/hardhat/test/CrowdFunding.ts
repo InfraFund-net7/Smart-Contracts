@@ -1,298 +1,393 @@
 // import { expect } from "chai";
 // import { ethers } from "hardhat";
-// import { CrowdFunding, SecurityToken, UtilityToken, EnergyToken } from "../typechain-types";
+// import { time } from "@nomicfoundation/hardhat-network-helpers";
+// import { CrowdFunding, SecurityToken, EnergyToken } from "../typechain-types";
+// import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
-// describe("CrowdFunding - pledgeTokens function", function () {
-//   // Variables to store contract instances and addresses
-//   let crowdFunding: CrowdFunding;
+// describe("CrowdFunding", function () {
+//   // Test variables
+//   let crowdfunding: CrowdFunding;
 //   let securityToken: SecurityToken;
+//   let utilityToken: SecurityToken;
 //   let energyToken: EnergyToken;
-//   let utilityToken: UtilityToken;
-//   let owner: any;
-//   let client: any;
-//   let generalContractor: any;
-//   let auditor: any;
-//   //let investor: any;
-//   let anotherAccount: any;
+//   let owner: SignerWithAddress;
+//   let auditor: SignerWithAddress;
+//   let generalContractor: SignerWithAddress;
+//   let client: SignerWithAddress;
+//   let investor1: SignerWithAddress;
+//   let investor2: SignerWithAddress;
+//   let investor3: SignerWithAddress;
 
-//   // Constants for test
-//   const TARGET_AMOUNT = ethers.parseEther("100"); // 100 tokens as target
-//   const INVESTMENT_PERIOD = Math.floor(Date.now() / 1000) + 86400; // 1 day from now
-//   const MILESTONE_AMOUNTS = [ethers.parseEther("50"), ethers.parseEther("50")]; // Two milestones of 50 tokens each
-//   const PLEDGE_AMOUNT = ethers.parseEther("10"); // Amount to pledge for testing
-//   const INITIAL_SUPPLY = ethers.parseEther("1000000"); // 1M tokens initial supply
+//   // Constants
+//   const ONE_DAY = 86400;
+//   const ONE_WEEK = ONE_DAY * 7;
+//   const TARGET_AMOUNT = ethers.parseEther("1000");
+//   const MILESTONE_AMOUNTS = [
+//     ethers.parseEther("300"),
+//     ethers.parseEther("400"),
+//     ethers.parseEther("300")
+//   ];
 
-//   before(async function () {
+//   before(async () => {
 //     // Get signers
-//     [owner, client, generalContractor, auditor, investor, anotherAccount] = await ethers.getSigners();
+//     [owner, auditor, generalContractor, client, investor1, investor2, investor3] = await ethers.getSigners();
 
-//     // Deploy SecurityToken contract
+//     // Deploy mock tokens
 //     const SecurityTokenFactory = await ethers.getContractFactory("SecurityToken");
-//     securityToken = (await SecurityTokenFactory.deploy(INITIAL_SUPPLY)) as SecurityToken;
+//     securityToken = await SecurityTokenFactory.deploy("SecurityToken", "SECT") as SecurityToken;
 //     await securityToken.waitForDeployment();
 
-//     // Deploy UtilityToken contract
-//     const UtilityTokenFactory = await ethers.getContractFactory("UtilityToken");
-//     utilityToken = (await UtilityTokenFactory.deploy(INITIAL_SUPPLY)) as UtilityToken;
+//     const UtilityTokenFactory = await ethers.getContractFactory("SecurityToken"); // Reusing token contract for simplicity
+//     utilityToken = await UtilityTokenFactory.deploy("UtilityToken", "UTIL") as SecurityToken;
 //     await utilityToken.waitForDeployment();
 
-//     // Deploy EnergyToken contract
 //     const EnergyTokenFactory = await ethers.getContractFactory("EnergyToken");
-//     energyToken = (await EnergyTokenFactory.deploy("EnergyToken", "ET")) as EnergyToken;
+//     energyToken = await EnergyTokenFactory.deploy("EnergyToken", "ERGY") as EnergyToken;
 //     await energyToken.waitForDeployment();
 
-//     // Deploy CrowdFunding contract
+//     // Set up investment period (1 week from now)
+//     const currentTimestamp = await time.latest();
+//     const investmentPeriod = currentTimestamp + ONE_WEEK;
+
+//     // Deploy crowdfunding contract
 //     const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
-//     crowdFunding = (await CrowdFundingFactory.deploy(
+//     crowdfunding = await CrowdFundingFactory.deploy(
 //       await securityToken.getAddress(),
 //       await utilityToken.getAddress(),
 //       await energyToken.getAddress(),
-//       INVESTMENT_PERIOD,
+//       investmentPeriod,
 //       TARGET_AMOUNT,
 //       auditor.address,
 //       generalContractor.address,
 //       client.address,
-//       MILESTONE_AMOUNTS,
-//     )) as CrowdFunding;
-//     await crowdFunding.waitForDeployment();
+//       MILESTONE_AMOUNTS
+//     ) as CrowdFunding;
+//     await crowdfunding.waitForDeployment();
 
-//     // Set crowdFunding contract in EnergyToken
-//     await energyToken.setCrowdFundingContract(await crowdFunding.getAddress());
+//     // Transfer tokens to participants
+//     // Mint security tokens to client for pledging
+//     await securityToken.mint(client.address, TARGET_AMOUNT);
+//     // Mint utility tokens to investors
+//     await utilityToken.mint(investor1.address, ethers.parseEther("400"));
+//     await utilityToken.mint(investor2.address, ethers.parseEther("400"));
+//     await utilityToken.mint(investor3.address, ethers.parseEther("400"));
 
-//     // Transfer security tokens to client for testing
-//     await securityToken.transfer(client.address, ethers.parseEther("200"));
+//     // Set energy token crowdfunding address
+//     await energyToken.setCrowdfundingAddress(await crowdfunding.getAddress());
 //   });
 
-//   describe("Access Control", function () {
-//     it("should revert when called by non-client address", async function () {
-//       await expect(crowdFunding.connect(anotherAccount).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
-//         "Only the client can pledge tokens",
-//       );
+//   describe("Deployment", function () {
+//     it("Should set the correct state variables", async function () {
+//       expect(await crowdfunding.auditor()).to.equal(auditor.address);
+//       expect(await crowdfunding.generalContractor()).to.equal(generalContractor.address);
+//       expect(await crowdfunding.client()).to.equal(client.address);
+//       expect(await crowdfunding.securityToken()).to.equal(await securityToken.getAddress());
+//       expect(await crowdfunding.utilityToken()).to.equal(await utilityToken.getAddress());
+//       expect(await crowdfunding.energyToken()).to.equal(await energyToken.getAddress());
 
-//       await expect(crowdFunding.connect(generalContractor).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
-//         "Only the client can pledge tokens",
-//       );
+//       const proposal = await crowdfunding.proposal();
+//       expect(proposal.targetAmount).to.equal(TARGET_AMOUNT);
 
-//       await expect(crowdFunding.connect(auditor).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
-//         "Only the client can pledge tokens",
-//       );
-//     });
-//   });
-
-//   describe("Input Validation", function () {
-//     it("should revert when pledge amount is zero", async function () {
-//       await expect(crowdFunding.connect(client).pledgeTokens(0)).to.be.revertedWith(
-//         "Pledge amount must be greater than zero",
-//       );
-//     });
-
-//     it("should revert when allowance is too low", async function () {
-//       // No approval given to contract
-//       await expect(crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith("Allowance too low");
-//     });
-//   });
-
-//   describe("Core Functionality", function () {
-//     it("should successfully pledge tokens when all conditions are met", async function () {
-//       // Approve crowdFunding contract to spend client's tokens
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // Get initial balances
-//       const initialClientBalance = await securityToken.balanceOf(client.address);
-//       const initialContractBalance = await securityToken.balanceOf(await crowdFunding.getAddress());
-//       const initialEnergyTokenSupply = await energyToken.totalSupply();
-
-//       // Execute pledgeTokens function
-//       await expect(crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT))
-//         .to.emit(crowdFunding, "TokensPledged")
-//         .withArgs(client.address, PLEDGE_AMOUNT);
-
-//       // Verify token balances after pledge
-//       expect(await securityToken.balanceOf(client.address)).to.equal(initialClientBalance - PLEDGE_AMOUNT);
-//       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         initialContractBalance + PLEDGE_AMOUNT,
-//       );
-
-//       // Verify EnergyTokens were minted
-//       expect(await energyToken.totalSupply()).to.equal(initialEnergyTokenSupply + PLEDGE_AMOUNT);
-//       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(PLEDGE_AMOUNT);
-
-//       // Verify tokensPledged flag is set to true
-//       expect(await crowdFunding.tokensPledged()).to.be.true;
-//     });
-
-//     it("should allow multiple pledges from the client", async function () {
-//       // Approve crowdFunding contract to spend more of client's tokens
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // Get balances before second pledge
-//       const clientBalanceBeforeSecondPledge = await securityToken.balanceOf(client.address);
-//       const contractBalanceBeforeSecondPledge = await securityToken.balanceOf(await crowdFunding.getAddress());
-//       const energyTokenSupplyBeforeSecondPledge = await energyToken.totalSupply();
-//       const contractEnergyBalanceBeforeSecondPledge = await energyToken.balanceOf(await crowdFunding.getAddress());
-
-//       // Second pledge
-//       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-//       // Verify token balances after second pledge
-//       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforeSecondPledge - PLEDGE_AMOUNT);
-//       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractBalanceBeforeSecondPledge + PLEDGE_AMOUNT,
-//       );
-
-//       // Verify additional EnergyTokens were minted
-//       expect(await energyToken.totalSupply()).to.equal(energyTokenSupplyBeforeSecondPledge + PLEDGE_AMOUNT);
-//       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractEnergyBalanceBeforeSecondPledge + PLEDGE_AMOUNT,
-//       );
+//       // Check milestones
+//       for (let i = 0; i < MILESTONE_AMOUNTS.length; i++) {
+//         const milestone = await crowdfunding.milestones(i);
+//         expect(milestone.amount).to.equal(MILESTONE_AMOUNTS[i]);
+//         expect(milestone.verified).to.be.false;
+//         expect(milestone.fundsReleased).to.be.false;
+//       }
 //     });
 //   });
 
-//   describe("Edge Cases", function () {
-//     it("should handle large pledge amounts correctly", async function () {
-//       const LARGE_PLEDGE = ethers.parseEther("50"); // 50 tokens
+//   describe("Token Pledging", function () {
+//     it("Should allow client to pledge security tokens", async function () {
+//       // Approve tokens for transfer
+//       await securityToken.connect(client).approve(await crowdfunding.getAddress(), TARGET_AMOUNT);
 
-//       // Approve crowdFunding contract to spend client's tokens
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), LARGE_PLEDGE);
+//       // Pledge tokens
+//       await expect(crowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT))
+//         .to.emit(crowdfunding, "TokensPledged")
+//         .withArgs(client.address, TARGET_AMOUNT);
 
-//       // Get balances before large pledge
-//       const clientBalanceBeforeLargePledge = await securityToken.balanceOf(client.address);
-//       const contractBalanceBeforeLargePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
-//       const energyTokenSupplyBeforeLargePledge = await energyToken.totalSupply();
-//       const contractEnergyBalanceBeforeLargePledge = await energyToken.balanceOf(await crowdFunding.getAddress());
+//       // Check token pledged status
+//       expect(await crowdfunding.tokensPledged()).to.be.true;
 
-//       // Execute pledgeTokens function with large amount
-//       await crowdFunding.connect(client).pledgeTokens(LARGE_PLEDGE);
+//       // Check security token balance of contract
+//       expect(await securityToken.balanceOf(await crowdfunding.getAddress())).to.equal(TARGET_AMOUNT);
 
-//       // Verify large token transfer was successful
-//       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforeLargePledge - LARGE_PLEDGE);
-//       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractBalanceBeforeLargePledge + LARGE_PLEDGE,
-//       );
-//       expect(await energyToken.totalSupply()).to.equal(energyTokenSupplyBeforeLargePledge + LARGE_PLEDGE);
-//       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractEnergyBalanceBeforeLargePledge + LARGE_PLEDGE,
-//       );
+//       // Check energy tokens minted to contract
+//       expect(await energyToken.balanceOf(await crowdfunding.getAddress())).to.equal(TARGET_AMOUNT);
 //     });
 
-//     it("should work with emergency stop mechanism", async function () {
-//       // Mint and approve more tokens for client
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // Enable emergency stop
-//       await crowdFunding.connect(owner).toggleEmergencyStop();
-//       expect(await crowdFunding.emergencyStop()).to.be.true;
-
-//       // Get balances before pledge
-//       const clientBalanceBeforePledge = await securityToken.balanceOf(client.address);
-//       const contractBalanceBeforePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
-
-//       // Pledge should still work (not affected by emergency stop)
-//       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-//       // Verify pledge was successful while in emergency stop
-//       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforePledge - PLEDGE_AMOUNT);
-//       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractBalanceBeforePledge + PLEDGE_AMOUNT,
-//       );
-
-//       // Disable emergency stop for other tests
-//       await crowdFunding.connect(owner).toggleEmergencyStop();
-//       expect(await crowdFunding.emergencyStop()).to.be.false;
+//     it("Should not allow non-client to pledge tokens", async function () {
+//       await securityToken.connect(client).approve(await crowdfunding.getAddress(), TARGET_AMOUNT);
+//       await expect(crowdfunding.connect(investor1).pledgeTokens(TARGET_AMOUNT))
+//         .to.be.revertedWith("Only the client can pledge tokens");
 //     });
 
-//     it("should handle pledge after funding has failed", async function () {
-//       // Advance time past investment period
-//       await ethers.provider.send("evm_setNextBlockTimestamp", [INVESTMENT_PERIOD + 1]);
-//       await ethers.provider.send("evm_mine");
-
-//       // Check funding status (should mark as failed since target not reached)
-//       await crowdFunding.checkFundingStatus();
-
-//       // Verify funding failed
-//       expect(await crowdFunding.fundingFailed()).to.be.true;
-
-//       // Approve more tokens for client
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // Get balances before pledge
-//       const clientBalanceBeforePledge = await securityToken.balanceOf(client.address);
-//       const contractBalanceBeforePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
-//       const contractEnergyBalanceBeforePledge = await energyToken.balanceOf(await crowdFunding.getAddress());
-
-//       // Pledge should still work after funding has failed
-//       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-//       // Verify pledge was successful even though funding failed
-//       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforePledge - PLEDGE_AMOUNT);
-//       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractBalanceBeforePledge + PLEDGE_AMOUNT,
-//       );
-//       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractEnergyBalanceBeforePledge + PLEDGE_AMOUNT,
-//       );
+//     it("Should fail if pledge amount is zero", async function () {
+//       await expect(crowdfunding.connect(client).pledgeTokens(0))
+//         .to.be.revertedWith("Pledge amount must be greater than zero");
 //     });
-//   });
 
-//   describe("EnergyToken Integration", function () {
-//     it("should fail if EnergyToken crowdFundingContract is not properly set", async function () {
-//       // Deploy new instances for this specific test
-//       const newEnergyToken = (await (
-//         await ethers.getContractFactory("EnergyToken")
-//       ).deploy("EnergyToken2", "ET2")) as EnergyToken;
-//       await newEnergyToken.waitForDeployment();
+//     it("Should fail if allowance is insufficient", async function () {
+//       // Deploy a fresh contract to test with
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_WEEK;
 
-//       const newCrowdFunding = (await (
-//         await ethers.getContractFactory("CrowdFunding")
-//       ).deploy(
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       const newCrowdfunding = await CrowdFundingFactory.deploy(
 //         await securityToken.getAddress(),
 //         await utilityToken.getAddress(),
-//         await newEnergyToken.getAddress(),
-//         INVESTMENT_PERIOD + 86400, // Set to a future time to avoid funding failure
+//         await energyToken.getAddress(),
+//         investmentPeriod,
 //         TARGET_AMOUNT,
 //         auditor.address,
 //         generalContractor.address,
 //         client.address,
-//         MILESTONE_AMOUNTS,
-//       )) as CrowdFunding;
-//       await newCrowdFunding.waitForDeployment();
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await newCrowdfunding.waitForDeployment();
 
-//       // Note: we deliberately don't set the crowdFundingContract on newEnergyToken
-
-//       // Approve tokens
-//       await securityToken.connect(client).approve(await newCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // The pledge should fail when attempting to mint energy tokens
-//       await expect(newCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
-//         "Only crowdfunding contract can mint",
-//       );
-//     });
-
-//     it("should properly mint energy tokens to the crowdfunding contract", async function () {
-//       // Approve one more pledge
-//       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-
-//       // Get current energy token balance
-//       const contractEnergyBalanceBefore = await energyToken.balanceOf(await crowdFunding.getAddress());
-
-//       // Make pledge
-//       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-//       // Verify energy tokens went to the crowdfunding contract, not the client
-//       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
-//         contractEnergyBalanceBefore + PLEDGE_AMOUNT,
-//       );
-//       expect(await energyToken.balanceOf(client.address)).to.equal(0);
+//       // Don't approve
+//       await expect(newCrowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT))
+//         .to.be.revertedWith("Allowance too low");
 //     });
 //   });
+
+//   describe("Investment", function () {
+//     let freshCrowdfunding: CrowdFunding;
+
+//     before(async () => {
+//       // Deploy a fresh contract for investment tests
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_WEEK;
+
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       freshCrowdfunding = await CrowdFundingFactory.deploy(
+//         await securityToken.getAddress(),
+//         await utilityToken.getAddress(),
+//         await energyToken.getAddress(),
+//         investmentPeriod,
+//         TARGET_AMOUNT,
+//         auditor.address,
+//         generalContractor.address,
+//         client.address,
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await freshCrowdfunding.waitForDeployment();
+
+//       // Set energy token crowdfunding address
+//       await energyToken.setCrowdfundingAddress(await freshCrowdfunding.getAddress());
+
+//       // Pledge tokens
+//       await securityToken.connect(client).approve(await freshCrowdfunding.getAddress(), TARGET_AMOUNT);
+//       await freshCrowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT);
+
+//       // Approve utility tokens for investment
+//       await utilityToken.connect(investor1).approve(await freshCrowdfunding.getAddress(), ethers.parseEther("400"));
+//       await utilityToken.connect(investor2).approve(await freshCrowdfunding.getAddress(), ethers.parseEther("400"));
+//       await utilityToken.connect(investor3).approve(await freshCrowdfunding.getAddress(), ethers.parseEther("400"));
+//     });
+
+//     it("Should allow investors to invest", async function () {
+//       await expect(freshCrowdfunding.connect(investor1).invest(ethers.parseEther("300")))
+//         .to.emit(freshCrowdfunding, "InvestmentReceived")
+//         .withArgs(investor1.address, ethers.parseEther("300"));
+
+//       // Check investor balance
+//       expect(await freshCrowdfunding.investorBalances(investor1.address)).to.equal(ethers.parseEther("300"));
+//       expect(await freshCrowdfunding.fundsRaised()).to.equal(ethers.parseEther("300"));
+//       expect(await freshCrowdfunding.pendingEnergyTokens(investor1.address)).to.equal(ethers.parseEther("300"));
+//     });
+
+//     it("Should automatically mark funding as successful when target is reached", async function () {
+//       // Invest from multiple investors to reach target
+//       await freshCrowdfunding.connect(investor2).invest(ethers.parseEther("400"));
+
+//       // This should trigger funding successful
+//       await expect(freshCrowdfunding.connect(investor3).invest(ethers.parseEther("300")))
+//         .to.emit(freshCrowdfunding, "FundingSuccessful");
+
+//       expect(await freshCrowdfunding.fundingSuccessful()).to.be.true;
+//       expect(await freshCrowdfunding.energyTokensReleased()).to.be.true;
+//     });
+
+//     it("Should not allow investment before tokens are pledged", async function () {
+//       // Deploy a fresh contract
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_WEEK;
+
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       const newCrowdfunding = await CrowdFundingFactory.deploy(
+//         await securityToken.getAddress(),
+//         await utilityToken.getAddress(),
+//         await energyToken.getAddress(),
+//         investmentPeriod,
+//         TARGET_AMOUNT,
+//         auditor.address,
+//         generalContractor.address,
+//         client.address,
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await newCrowdfunding.waitForDeployment();
+
+//       await utilityToken.connect(investor1).approve(await newCrowdfunding.getAddress(), ethers.parseEther("100"));
+
+//       // Try to invest before tokens are pledged
+//       await expect(newCrowdfunding.connect(investor1).invest(ethers.parseEther("100")))
+//         .to.be.revertedWith("INVEST: Security tokens not pledged");
+//     });
+
+//     it("Should not allow investment after investment period", async function () {
+//       // Deploy a fresh contract
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_DAY; // Short period
+
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       const newCrowdfunding = await CrowdFundingFactory.deploy(
+//         await securityToken.getAddress(),
+//         await utilityToken.getAddress(),
+//         await energyToken.getAddress(),
+//         investmentPeriod,
+//         TARGET_AMOUNT,
+//         auditor.address,
+//         generalContractor.address,
+//         client.address,
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await newCrowdfunding.waitForDeployment();
+
+//       // Pledge tokens
+//       await securityToken.connect(client).approve(await newCrowdfunding.getAddress(), TARGET_AMOUNT);
+//       await newCrowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT);
+
+//       // Fast forward time to after investment period
+//       await time.increase(ONE_DAY + 1);
+
+//       await utilityToken.connect(investor1).approve(await newCrowdfunding.getAddress(), ethers.parseEther("100"));
+//       await expect(newCrowdfunding.connect(investor1).invest(ethers.parseEther("100")))
+//         .to.be.revertedWith("INVEST: Investment period has ended");
+//     });
+
+//     it("Should not allow investment after funding is successful", async function () {
+//       // Try to invest more after target reached (using the freshCrowdfunding instance where funding is already successful)
+//       await expect(freshCrowdfunding.connect(investor3).invest(ethers.parseEther("100")))
+//         .to.be.revertedWith("INVEST: Funding already successful");
+//     });
+
+//     it("Should check funding status correctly", async function () {
+//       // Deploy a fresh contract
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_DAY; // Short period
+
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       const statusCrowdfunding = await CrowdFundingFactory.deploy(
+//         await securityToken.getAddress(),
+//         await utilityToken.getAddress(),
+//         await energyToken.getAddress(),
+//         investmentPeriod,
+//         TARGET_AMOUNT,
+//         auditor.address,
+//         generalContractor.address,
+//         client.address,
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await statusCrowdfunding.waitForDeployment();
+
+//       // Pledge tokens
+//       await securityToken.connect(client).approve(await statusCrowdfunding.getAddress(), TARGET_AMOUNT);
+//       await statusCrowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT);
+
+//       // Before investment period ends
+//       expect(await statusCrowdfunding.checkFundingStatus()).to.be.false;
+
+//       // Invest some amount but not enough
+//       await utilityToken.connect(investor1).approve(await statusCrowdfunding.getAddress(), ethers.parseEther("300"));
+//       await statusCrowdfunding.connect(investor1).invest(ethers.parseEther("300")); // Not reaching target
+
+//       // After investment period with insufficient funds
+//       await time.increase(ONE_DAY + 1);
+
+//       expect(await statusCrowdfunding.checkFundingStatus()).to.be.true;
+//       expect(await statusCrowdfunding.fundingFailed()).to.be.true;
+//     });
+//   });
+
+//   describe("Emergency Stop", function () {
+//     let emergencyCrowdfunding: CrowdFunding;
+
+//     before(async () => {
+//       // Deploy a fresh contract for emergency tests
+//       const currentTimestamp = await time.latest();
+//       const investmentPeriod = currentTimestamp + ONE_WEEK;
+
+//       const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+//       emergencyCrowdfunding = await CrowdFundingFactory.deploy(
+//         await securityToken.getAddress(),
+//         await utilityToken.getAddress(),
+//         await energyToken.getAddress(),
+//         investmentPeriod,
+//         TARGET_AMOUNT,
+//         auditor.address,
+//         generalContractor.address,
+//         client.address,
+//         MILESTONE_AMOUNTS
+//       ) as CrowdFunding;
+//       await emergencyCrowdfunding.waitForDeployment();
+
+//       // Pledge tokens
+//       await securityToken.connect(client).approve(await emergencyCrowdfunding.getAddress(), TARGET_AMOUNT);
+//       await emergencyCrowdfunding.connect(client).pledgeTokens(TARGET_AMOUNT);
+
+//       // Approve utility tokens for investment
+//       await utilityToken.connect(investor1).approve(await emergencyCrowdfunding.getAddress(), ethers.parseEther("100"));
+//     });
+
+//     it("Should allow owner to toggle emergency stop", async function () {
+//       await expect(emergencyCrowdfunding.connect(owner).toggleEmergencyStop())
+//         .to.emit(emergencyCrowdfunding, "EmergencyToggled")
+//         .withArgs(true);
+
+//       expect(await emergencyCrowdfunding.emergencyStop()).to.be.true;
+
+//       await expect(emergencyCrowdfunding.connect(owner).toggleEmergencyStop())
+//         .to.emit(emergencyCrowdfunding, "EmergencyToggled")
+//         .withArgs(false);
+
+//       expect(await emergencyCrowdfunding.emergencyStop()).to.be.false;
+//     });
+
+//     it("Should prevent investment when emergency stop is active", async function () {
+//       // Enable emergency stop
+//       await emergencyCrowdfunding.connect(owner).toggleEmergencyStop();
+
+//       // Try to invest
+//       await expect(emergencyCrowdfunding.connect(investor1).invest(ethers.parseEther("100")))
+//         .to.be.revertedWith("Contract is in emergency stop");
+//     });
+
+//     it("Should not allow non-owner to toggle emergency stop", async function () {
+//       await expect(emergencyCrowdfunding.connect(investor1).toggleEmergencyStop())
+//         .to.be.revertedWith("Ownable: caller is not the owner");
+//     });
+//   });
+
+//   // Note: Additional test suites would typically include:
+//   // 1. Milestone verification by auditor
+//   // 2. Fund withdrawal by general contractor
+//   // 3. Extra fund requests and voting
+//   // 4. Refund claiming when funding fails
+//   // 5. Energy token claiming and transfer
+//   // 6. Security token withdrawal
 // });
-// //--------------------
+
+// //----------------------------------------------------------------
 
 // // import { expect } from "chai";
 // // import { ethers } from "hardhat";
 // // import { CrowdFunding, SecurityToken, UtilityToken, EnergyToken } from "../typechain-types";
 
-// // describe("CrowdFunding - invest function", function () {
+// // describe("CrowdFunding - pledgeTokens function", function () {
 // //   // Variables to store contract instances and addresses
 // //   let crowdFunding: CrowdFunding;
 // //   let securityToken: SecurityToken;
@@ -302,8 +397,7 @@
 // //   let client: any;
 // //   let generalContractor: any;
 // //   let auditor: any;
-// //   let investor1: any;
-// //   let investor2: any;
+// //   let investor: any;
 // //   let anotherAccount: any;
 
 // //   // Constants for test
@@ -311,12 +405,11 @@
 // //   const INVESTMENT_PERIOD = Math.floor(Date.now() / 1000) + 86400; // 1 day from now
 // //   const MILESTONE_AMOUNTS = [ethers.parseEther("50"), ethers.parseEther("50")]; // Two milestones of 50 tokens each
 // //   const PLEDGE_AMOUNT = ethers.parseEther("10"); // Amount to pledge for testing
-// //   const INVEST_AMOUNT = ethers.parseEther("25"); // Amount to invest for testing
 // //   const INITIAL_SUPPLY = ethers.parseEther("1000000"); // 1M tokens initial supply
 
 // //   before(async function () {
 // //     // Get signers
-// //     [owner, client, generalContractor, auditor, investor1, investor2, anotherAccount] = await ethers.getSigners();
+// //     [owner, client, generalContractor, auditor, investor, anotherAccount] = await ethers.getSigners();
 
 // //     // Deploy SecurityToken contract
 // //     const SecurityTokenFactory = await ethers.getContractFactory("SecurityToken");
@@ -344,549 +437,237 @@
 // //       auditor.address,
 // //       generalContractor.address,
 // //       client.address,
-// //       MILESTONE_AMOUNTS
+// //       MILESTONE_AMOUNTS,
 // //     )) as CrowdFunding;
 // //     await crowdFunding.waitForDeployment();
 
 // //     // Set crowdFunding contract in EnergyToken
 // //     await energyToken.setCrowdFundingContract(await crowdFunding.getAddress());
 
-// //     // Transfer tokens to investors for testing
-// //     await utilityToken.transfer(investor1.address, ethers.parseEther("5000"));
-// //     await utilityToken.transfer(investor2.address, ethers.parseEther("5000"));
-
-// //     // Approve and pledge tokens to enable investments
+// //     // Transfer security tokens to client for testing
 // //     await securityToken.transfer(client.address, ethers.parseEther("200"));
-// //     await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //     await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
 // //   });
 
-// //   describe("Prerequisites and Access Control", function () {
-// //     it("should be accessible by any address", async function () {
-// //       // Approve tokens for spending
-// //       await utilityToken.connect(investor1).approve(await crowdFunding.getAddress(), INVEST_AMOUNT);
-// //       await utilityToken.connect(investor2).approve(await crowdFunding.getAddress(), INVEST_AMOUNT);
-// //       await utilityToken.connect(anotherAccount).approve(await crowdFunding.getAddress(), INVEST_AMOUNT);
+// //   describe("Access Control", function () {
+// //     it("should revert when called by non-client address", async function () {
+// //       await expect(crowdFunding.connect(anotherAccount).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
+// //         "Only the client can pledge tokens",
+// //       );
 
-// //       // Transfer some tokens to anotherAccount
-// //       await utilityToken.transfer(anotherAccount.address, INVEST_AMOUNT);
+// //       await expect(crowdFunding.connect(generalContractor).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
+// //         "Only the client can pledge tokens",
+// //       );
 
-// //       // All addresses should be able to invest
-// //       await expect(crowdFunding.connect(investor1).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //       await expect(crowdFunding.connect(investor2).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //       await expect(crowdFunding.connect(anotherAccount).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //     });
-
-// //     it("should require security tokens to be pledged first", async function () {
-// //       // Deploy a new contract without pledging
-// //       const newCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await newCrowdFunding.waitForDeployment();
-
-// //       // Approve tokens
-// //       await utilityToken.connect(investor1).approve(await newCrowdFunding.getAddress(), INVEST_AMOUNT);
-
-// //       // Try to invest without pledging security tokens first
-// //       await expect(
-// //         newCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)
-// //       ).to.be.revertedWith("INVEST: Security tokens not pledged");
+// //       await expect(crowdFunding.connect(auditor).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
+// //         "Only the client can pledge tokens",
+// //       );
 // //     });
 // //   });
 
 // //   describe("Input Validation", function () {
-// //     it("should revert when investment amount is zero", async function () {
-// //       await expect(
-// //         crowdFunding.connect(investor1).invest(0)
-// //       ).to.be.revertedWith("INVEST: Zero amount");
+// //     it("should revert when pledge amount is zero", async function () {
+// //       await expect(crowdFunding.connect(client).pledgeTokens(0)).to.be.revertedWith(
+// //         "Pledge amount must be greater than zero",
+// //       );
 // //     });
 
-// //     it("should revert when investment period is over", async function () {
-// //       // Deploy a contract with a past investment period
-// //       const pastPeriod = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
-
-// //       const expiredCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         pastPeriod,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await expiredCrowdFunding.waitForDeployment();
-
-// //       // Set and pledge tokens
-// //       await energyToken.setCrowdFundingContract(await expiredCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await expiredCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await expiredCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Approve investment
-// //       await utilityToken.connect(investor1).approve(await expiredCrowdFunding.getAddress(), INVEST_AMOUNT);
-
-// //       // Try to invest after investment period ended
-// //       await expect(
-// //         expiredCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)
-// //       ).to.be.revertedWith("INVEST: Period ended");
-// //     });
-
-// //     it("should revert when target amount would be exceeded", async function () {
-// //       // Calculate remaining amount to reach target
-// //       const currentRaised = await crowdFunding.fundsRaised();
-// //       const remainingToTarget = TARGET_AMOUNT - currentRaised;
-
-// //       // Try to invest more than remaining amount
-// //       const excessAmount = remainingToTarget + ethers.parseEther("1");
-// //       await utilityToken.connect(investor1).approve(await crowdFunding.getAddress(), excessAmount);
-
-// //       await expect(
-// //         crowdFunding.connect(investor1).invest(excessAmount)
-// //       ).to.be.revertedWith("INVEST: Target exceeded");
-
-// //       // Invest exactly remaining amount should work
-// //       if (remainingToTarget > 0) {
-// //         await utilityToken.connect(investor1).approve(await crowdFunding.getAddress(), remainingToTarget);
-// //         await expect(crowdFunding.connect(investor1).invest(remainingToTarget)).to.not.be.reverted;
-// //       }
-// //     });
-
-// //     it("should revert when allowance is insufficient", async function () {
-// //       // Deploy a new contract for clean state
-// //       const newCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400, // Set a future time
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await newCrowdFunding.waitForDeployment();
-
-// //       // Set crowdFunding and pledge tokens
-// //       await energyToken.setCrowdFundingContract(await newCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await newCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await newCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Approve less than investment amount
-// //       const approveAmount = ethers.parseEther("10");
-// //       const investAmount = ethers.parseEther("15");
-// //       await utilityToken.connect(investor1).approve(await newCrowdFunding.getAddress(), approveAmount);
-
-// //       // Try to invest more than approved
-// //       await expect(
-// //         newCrowdFunding.connect(investor1).invest(investAmount)
-// //       ).to.be.revertedWith("INVEST: Insufficient allowance");
-// //     });
-
-// //     it("should revert when balance is insufficient", async function () {
-// //       // Create a new account with no tokens
-// //       const emptyAccount = ethers.Wallet.createRandom().connect(ethers.provider);
-
-// //       // Fund it with ETH for gas but not tokens
-// //       await owner.sendTransaction({
-// //         to: emptyAccount.address,
-// //         value: ethers.parseEther("1")
-// //       });
-
-// //       // Try to invest
-// //       await expect(
-// //         crowdFunding.connect(emptyAccount).invest(INVEST_AMOUNT)
-// //       ).to.be.revertedWith("INVEST: Insufficient balance");
+// //     it("should revert when allowance is too low", async function () {
+// //       // No approval given to contract
+// //       await expect(crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith("Allowance too low");
 // //     });
 // //   });
 
 // //   describe("Core Functionality", function () {
-// //     it("should successfully invest when all conditions are met", async function () {
-// //       // Reset with a new contract for clean state
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set crowdFunding and pledge tokens
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Approve tokens
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), INVEST_AMOUNT);
+// //     it("should successfully pledge tokens when all conditions are met", async function () {
+// //       // Approve crowdFunding contract to spend client's tokens
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
 
 // //       // Get initial balances
-// //       const initialInvestorBalance = await utilityToken.balanceOf(investor1.address);
-// //       const initialContractBalance = await utilityToken.balanceOf(await freshCrowdFunding.getAddress());
-// //       const initialFundsRaised = await freshCrowdFunding.fundsRaised();
-// //       const initialPendingTokens = await freshCrowdFunding.pendingEnergyTokens(investor1.address);
-// //       const initialInvestorBalance_contract = await freshCrowdFunding.investorBalances(investor1.address);
+// //       const initialClientBalance = await securityToken.balanceOf(client.address);
+// //       const initialContractBalance = await securityToken.balanceOf(await crowdFunding.getAddress());
+// //       const initialEnergyTokenSupply = await energyToken.totalSupply();
 
-// //       // Make investment
-// //       const investTx = await freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT);
+// //       // Execute pledgeTokens function
+// //       await expect(crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT))
+// //         .to.emit(crowdFunding, "TokensPledged")
+// //         .withArgs(client.address, PLEDGE_AMOUNT);
 
-// //       // Check for event emission
-// //       await expect(investTx)
-// //         .to.emit(freshCrowdFunding, "InvestmentReceived")
-// //         .withArgs(investor1.address, INVEST_AMOUNT);
+// //       // Verify token balances after pledge
+// //       expect(await securityToken.balanceOf(client.address)).to.equal(initialClientBalance - PLEDGE_AMOUNT);
+// //       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         initialContractBalance + PLEDGE_AMOUNT,
+// //       );
 
-// //       // Verify state changes
-// //       expect(await utilityToken.balanceOf(investor1.address)).to.equal(initialInvestorBalance - INVEST_AMOUNT);
-// //       expect(await utilityToken.balanceOf(await freshCrowdFunding.getAddress())).to.equal(initialContractBalance + INVEST_AMOUNT);
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(initialFundsRaised + INVEST_AMOUNT);
-// //       expect(await freshCrowdFunding.pendingEnergyTokens(investor1.address)).to.equal(initialPendingTokens + INVEST_AMOUNT);
-// //       expect(await freshCrowdFunding.investorBalances(investor1.address)).to.equal(initialInvestorBalance_contract + INVEST_AMOUNT);
+// //       // Verify EnergyTokens were minted
+// //       expect(await energyToken.totalSupply()).to.equal(initialEnergyTokenSupply + PLEDGE_AMOUNT);
+// //       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(PLEDGE_AMOUNT);
 
-// //       // Verify return value (success)
-// //       const receipt = await investTx.wait();
-// //       expect(receipt?.status).to.equal(1);
+// //       // Verify tokensPledged flag is set to true
+// //       expect(await crowdFunding.tokensPledged()).to.be.true;
 // //     });
 
-// //     it("should track multiple investments from the same investor", async function () {
-// //       // Deploy fresh contract
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
+// //     it("should allow multiple pledges from the client", async function () {
+// //       // Approve crowdFunding contract to spend more of client's tokens
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
 
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
+// //       // Get balances before second pledge
+// //       const clientBalanceBeforeSecondPledge = await securityToken.balanceOf(client.address);
+// //       const contractBalanceBeforeSecondPledge = await securityToken.balanceOf(await crowdFunding.getAddress());
+// //       const energyTokenSupplyBeforeSecondPledge = await energyToken.totalSupply();
+// //       const contractEnergyBalanceBeforeSecondPledge = await energyToken.balanceOf(await crowdFunding.getAddress());
 
-// //       // Approve tokens for multiple investments
-// //       const firstAmount = ethers.parseEther("10");
-// //       const secondAmount = ethers.parseEther("15");
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), firstAmount + secondAmount);
+// //       // Second pledge
+// //       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
 
-// //       // Make first investment
-// //       await freshCrowdFunding.connect(investor1).invest(firstAmount);
+// //       // Verify token balances after second pledge
+// //       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforeSecondPledge - PLEDGE_AMOUNT);
+// //       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractBalanceBeforeSecondPledge + PLEDGE_AMOUNT,
+// //       );
 
-// //       // Get balances after first investment
-// //       const balanceAfterFirst = await freshCrowdFunding.investorBalances(investor1.address);
-// //       const pendingAfterFirst = await freshCrowdFunding.pendingEnergyTokens(investor1.address);
-// //       const raisedAfterFirst = await freshCrowdFunding.fundsRaised();
-
-// //       // Make second investment
-// //       await freshCrowdFunding.connect(investor1).invest(secondAmount);
-
-// //       // Verify cumulative tracking
-// //       expect(await freshCrowdFunding.investorBalances(investor1.address)).to.equal(balanceAfterFirst + secondAmount);
-// //       expect(await freshCrowdFunding.pendingEnergyTokens(investor1.address)).to.equal(pendingAfterFirst + secondAmount);
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(raisedAfterFirst + secondAmount);
-// //     });
-
-// //     it("should track investments from multiple investors", async function () {
-// //       // Deploy fresh contract
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Amounts for each investor
-// //       const amount1 = ethers.parseEther("20");
-// //       const amount2 = ethers.parseEther("30");
-
-// //       // Approve and invest for investor1
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), amount1);
-// //       await freshCrowdFunding.connect(investor1).invest(amount1);
-
-// //       // Approve and invest for investor2
-// //       await utilityToken.connect(investor2).approve(await freshCrowdFunding.getAddress(), amount2);
-// //       await freshCrowdFunding.connect(investor2).invest(amount2);
-
-// //       // Verify separate tracking for each investor
-// //       expect(await freshCrowdFunding.investorBalances(investor1.address)).to.equal(amount1);
-// //       expect(await freshCrowdFunding.investorBalances(investor2.address)).to.equal(amount2);
-// //       expect(await freshCrowdFunding.pendingEnergyTokens(investor1.address)).to.equal(amount1);
-// //       expect(await freshCrowdFunding.pendingEnergyTokens(investor2.address)).to.equal(amount2);
-
-// //       // Verify total funds raised
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(amount1 + amount2);
-// //     });
-
-// //     it("should emit FundingSuccessful when target amount is reached", async function () {
-// //       // Deploy fresh contract with smaller target for testing
-// //       const smallTarget = ethers.parseUnits("1", 18); // 1 token with 18 decimals
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         smallTarget,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Invest almost to target
-// //       const firstAmount = smallTarget - ethers.parseEther("10");
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), firstAmount);
-// //       await freshCrowdFunding.connect(investor1).invest(firstAmount);
-
-// //       // Verify not successful yet
-// //       expect(await freshCrowdFunding.fundingSuccessful()).to.be.false;
-
-// //       // Invest final amount to reach target
-// //       const finalAmount = ethers.parseEther("10");
-// //       await utilityToken.connect(investor2).approve(await freshCrowdFunding.getAddress(), finalAmount);
-
-// //       // This investment should trigger success
-// //       await expect(freshCrowdFunding.connect(investor2).invest(finalAmount))
-// //         .to.emit(freshCrowdFunding, "FundingSuccessful")
-// //         .withArgs(smallTarget, (await ethers.provider.getBlock("latest"))?.timestamp ?? 0); // Default to 0 if block is null
-
-// //       // Verify state
-// //       expect(await freshCrowdFunding.fundingSuccessful()).to.be.true;
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(smallTarget);
-// //     });
-
-// //     it("should not emit FundingSuccessful twice", async function () {
-// //       // Deploy fresh contract with smaller target
-// //       const smallTarget = ethers.parseEther("50");
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         smallTarget,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Reach target
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), smallTarget);
-// //       await freshCrowdFunding.connect(investor1).invest(smallTarget);
-
-// //       // Verify success state
-// //       expect(await freshCrowdFunding.fundingSuccessful()).to.be.true;
-
-// //       // Invest a bit more (should not emit FundingSuccessful again)
-// //       const extraAmount = ethers.parseEther("5");
-// //       await utilityToken.connect(investor2).approve(await freshCrowdFunding.getAddress(), extraAmount);
-
-// //       // This should not emit FundingSuccessful
-// //       await expect(freshCrowdFunding.connect(investor2).invest(extraAmount))
-// //         .to.emit(freshCrowdFunding, "InvestmentReceived")
-// //         .withArgs(investor2.address, extraAmount)
-// //         .and.to.not.emit(freshCrowdFunding, "FundingSuccessful");
-// //     });
-// //   });
-
-// //   describe("Contract State Interactions", function () {
-// //     it("should revert when contract is stopped", async function () {
-// //       // Deploy fresh contract
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-
-// //       // Stop the contract
-// //       await freshCrowdFunding.connect(owner).toggleEmergencyStop();
-// //       expect(await freshCrowdFunding.emergencyStop()).to.be.true;
-
-// //       // Approve tokens
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), INVEST_AMOUNT);
-
-// //       // Try to invest while stopped
-// //       await expect(
-// //         freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)
-// //       ).to.be.revertedWith("Contract is stopped");
-
-// //       // Resume contract
-// //       await freshCrowdFunding.connect(owner).toggleEmergencyStop();
-
-// //       // Should be able to invest now
-// //       await expect(freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //     });
-
-// //     it("should work properly with nonReentrant modifier", async function () {
-// //       // Testing the nonReentrant modifier directly is challenging without custom attack contracts
-// //       // Here we verify basic functionality after modifier is applied
-
-// //       // Deploy fresh contract
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         TARGET_AMOUNT,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
-
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
-// // )})});
-// //       // Rapid sequential investments (shouldn't trigger reentrancy guard false positives)
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), INVEST_AMOUNT.mul(3));
-
-// //       await expect(freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //       await expect(freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)).to.not.be.reverted;
-// //       await expect(freshCrowdFunding.connect(investor1).invest(INVEST_AMOUNT)).to.not.be.reverted;
+// //       // Verify additional EnergyTokens were minted
+// //       expect(await energyToken.totalSupply()).to.equal(energyTokenSupplyBeforeSecondPledge + PLEDGE_AMOUNT);
+// //       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractEnergyBalanceBeforeSecondPledge + PLEDGE_AMOUNT,
+// //       );
 // //     });
 // //   });
 
 // //   describe("Edge Cases", function () {
-// //     it("should handle multiple small investments that sum to target", async function () {
-// //       // Deploy fresh contract with smaller target
-// //       const smallTarget = ethers.parseEther("50");
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
+// //     it("should handle large pledge amounts correctly", async function () {
+// //       const LARGE_PLEDGE = ethers.parseEther("50"); // 50 tokens
+
+// //       // Approve crowdFunding contract to spend client's tokens
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), LARGE_PLEDGE);
+
+// //       // Get balances before large pledge
+// //       const clientBalanceBeforeLargePledge = await securityToken.balanceOf(client.address);
+// //       const contractBalanceBeforeLargePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
+// //       const energyTokenSupplyBeforeLargePledge = await energyToken.totalSupply();
+// //       const contractEnergyBalanceBeforeLargePledge = await energyToken.balanceOf(await crowdFunding.getAddress());
+
+// //       // Execute pledgeTokens function with large amount
+// //       await crowdFunding.connect(client).pledgeTokens(LARGE_PLEDGE);
+
+// //       // Verify large token transfer was successful
+// //       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforeLargePledge - LARGE_PLEDGE);
+// //       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractBalanceBeforeLargePledge + LARGE_PLEDGE,
+// //       );
+// //       expect(await energyToken.totalSupply()).to.equal(energyTokenSupplyBeforeLargePledge + LARGE_PLEDGE);
+// //       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractEnergyBalanceBeforeLargePledge + LARGE_PLEDGE,
+// //       );
+// //     });
+
+// //     it("should work with emergency stop mechanism", async function () {
+// //       // Mint and approve more tokens for client
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
+
+// //       // Enable emergency stop
+// //       await crowdFunding.connect(owner).toggleEmergencyStop();
+// //       expect(await crowdFunding.emergencyStop()).to.be.true;
+
+// //       // Get balances before pledge
+// //       const clientBalanceBeforePledge = await securityToken.balanceOf(client.address);
+// //       const contractBalanceBeforePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
+
+// //       // Pledge should still work (not affected by emergency stop)
+// //       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
+
+// //       // Verify pledge was successful while in emergency stop
+// //       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforePledge - PLEDGE_AMOUNT);
+// //       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractBalanceBeforePledge + PLEDGE_AMOUNT,
+// //       );
+
+// //       // Disable emergency stop for other tests
+// //       await crowdFunding.connect(owner).toggleEmergencyStop();
+// //       expect(await crowdFunding.emergencyStop()).to.be.false;
+// //     });
+
+// //     it("should handle pledge after funding has failed", async function () {
+// //       // Advance time past investment period
+// //       await ethers.provider.send("evm_setNextBlockTimestamp", [INVESTMENT_PERIOD + 1]);
+// //       await ethers.provider.send("evm_mine");
+
+// //       // Check funding status (should mark as failed since target not reached)
+// //       await crowdFunding.checkFundingStatus();
+
+// //       // Verify funding failed
+// //       expect(await crowdFunding.fundingFailed()).to.be.true;
+
+// //       // Approve more tokens for client
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
+
+// //       // Get balances before pledge
+// //       const clientBalanceBeforePledge = await securityToken.balanceOf(client.address);
+// //       const contractBalanceBeforePledge = await securityToken.balanceOf(await crowdFunding.getAddress());
+// //       const contractEnergyBalanceBeforePledge = await energyToken.balanceOf(await crowdFunding.getAddress());
+
+// //       // Pledge should still work after funding has failed
+// //       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
+
+// //       // Verify pledge was successful even though funding failed
+// //       expect(await securityToken.balanceOf(client.address)).to.equal(clientBalanceBeforePledge - PLEDGE_AMOUNT);
+// //       expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractBalanceBeforePledge + PLEDGE_AMOUNT,
+// //       );
+// //       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractEnergyBalanceBeforePledge + PLEDGE_AMOUNT,
+// //       );
+// //     });
+// //   });
+
+// //   describe("EnergyToken Integration", function () {
+// //     it("should fail if EnergyToken crowdFundingContract is not properly set", async function () {
+// //       // Deploy new instances for this specific test
+// //       const newEnergyToken = (await (
+// //         await ethers.getContractFactory("EnergyToken")
+// //       ).deploy("EnergyToken2", "ET2")) as EnergyToken;
+// //       await newEnergyToken.waitForDeployment();
+
+// //       const newCrowdFunding = (await (
+// //         await ethers.getContractFactory("CrowdFunding")
+// //       ).deploy(
 // //         await securityToken.getAddress(),
 // //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         smallTarget,
+// //         await newEnergyToken.getAddress(),
+// //         INVESTMENT_PERIOD + 86400, // Set to a future time to avoid funding failure
+// //         TARGET_AMOUNT,
 // //         auditor.address,
 // //         generalContractor.address,
 // //         client.address,
-// //         MILESTONE_AMOUNTS
+// //         MILESTONE_AMOUNTS,
 // //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
+// //       await newCrowdFunding.waitForDeployment();
 
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
+// //       // Note: we deliberately don't set the crowdFundingContract on newEnergyToken
 
-// //       // Make multiple small investments
-// //       const smallAmount = ethers.parseEther("5");
-// //       const numInvestments = 10; // 5 * 10 = 50, which is the target
+// //       // Approve tokens
+// //       await securityToken.connect(client).approve(await newCrowdFunding.getAddress(), PLEDGE_AMOUNT);
 
-// //       await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), smallTarget);
-
-// //       for (let i = 0; i < numInvestments; i++) {
-// //         if (i < numInvestments - 1) {
-// //           // Regular investment, no success event yet
-// //           await expect(freshCrowdFunding.connect(investor1).invest(smallAmount))
-// //             .to.emit(freshCrowdFunding, "InvestmentReceived")
-// //             .and.to.not.emit(freshCrowdFunding, "FundingSuccessful");
-// //         } else {
-// //           // Final investment should trigger success
-// //           await expect(freshCrowdFunding.connect(investor1).invest(smallAmount))
-// //             .to.emit(freshCrowdFunding, "InvestmentReceived")
-// //             .and.to.emit(freshCrowdFunding, "FundingSuccessful");
-// //         }
-// //       }
-
-// //       // Verify state
-// //       expect(await freshCrowdFunding.fundingSuccessful()).to.be.true;
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(smallTarget);
-// //       expect(await freshCrowdFunding.investorBalances(investor1.address)).to.equal(smallTarget);
-// //       expect(await freshCrowdFunding.pendingEnergyTokens(investor1.address)).to.equal(smallTarget);
+// //       // The pledge should fail when attempting to mint energy tokens
+// //       await expect(newCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT)).to.be.revertedWith(
+// //         "Only crowdfunding contract can mint",
+// //       );
 // //     });
 
-// //     it("should allow investments beyond target amount only until exact amount is reached", async function () {
-// //       // Deploy fresh contract with smaller target
-// //       const smallTarget = ethers.parseEther("100");
-// //       const freshCrowdFunding = (await (await ethers.getContractFactory("CrowdFunding")).deploy(
-// //         await securityToken.getAddress(),
-// //         await utilityToken.getAddress(),
-// //         await energyToken.getAddress(),
-// //         INVESTMENT_PERIOD + 86400,
-// //         smallTarget,
-// //         auditor.address,
-// //         generalContractor.address,
-// //         client.address,
-// //         MILESTONE_AMOUNTS
-// //       )) as CrowdFunding;
-// //       await freshCrowdFunding.waitForDeployment();
+// //     it("should properly mint energy tokens to the crowdfunding contract", async function () {
+// //       // Approve one more pledge
+// //       await securityToken.connect(client).approve(await crowdFunding.getAddress(), PLEDGE_AMOUNT);
 
-// //       // Set up and pledge
-// //       await energyToken.setCrowdFundingContract(await freshCrowdFunding.getAddress());
-// //       await securityToken.connect(client).approve(await freshCrowdFunding.getAddress(), PLEDGE_AMOUNT);
-// //       await freshCrowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
+// //       // Get current energy token balance
+// //       const contractEnergyBalanceBefore = await energyToken.balanceOf(await crowdFunding.getAddress());
 
-// //       // Invest 95% of target
-// //       const firstAmount = BigInt(smallTarget).mul(95).div(100); // 95 tokens (ensure smallTarget is BigInt)
-// // await utilityToken.connect(investor1).approve(await freshCrowdFunding.getAddress(), firstAmount);
-// // await freshCrowdFunding.connect(investor1).invest(firstAmount);
+// //       // Make pledge
+// //       await crowdFunding.connect(client).pledgeTokens(PLEDGE_AMOUNT);
 
-// // // Try to invest more than the remaining amount
-// // const remainingAmount = BigInt(smallTarget) - BigInt(firstAmount); // 5 tokens (convert both to BigInt before subtraction)
-// // const excessAmount = remainingAmount + ethers.parseUnits("10", 18); // 15 tokens (convert excess to correct token units)
-
-// //       await utilityToken.connect(investor2).approve(await freshCrowdFunding.getAddress(), excessAmount);
-// //       await expect(freshCrowdFunding.connect(investor2).invest(excessAmount))
-// //         .to.be.revertedWith("INVEST: Target exceeded");
-
-// //       // Invest exactly the remaining amount
-// //       await utilityToken.connect(investor2).approve(await freshCrowdFunding.getAddress(), remainingAmount);
-// //       await expect(freshCrowdFunding.connect(investor2).invest(remainingAmount))
-// //         .to.emit(freshCrowdFunding, "FundingSuccessful");
-
-// //       // Verify final state
-// //       expect(await freshCrowdFunding.fundsRaised()).to.equal(smallTarget);
-// //       expect(await freshCrowdFunding.fundingSuccessful()).to.be.true;
+// //       // Verify energy tokens went to the crowdfunding contract, not the client
+// //       expect(await energyToken.balanceOf(await crowdFunding.getAddress())).to.equal(
+// //         contractEnergyBalanceBefore + PLEDGE_AMOUNT,
+// //       );
+// //       expect(await energyToken.balanceOf(client.address)).to.equal(0);
 // //     });
+// //   });
+// // });
