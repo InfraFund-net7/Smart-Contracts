@@ -133,7 +133,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
      */
     modifier whenFundingActive() {
         require(!fundingFailed, "Funding has failed");
-        require(!fundingSuccessful, "Funding already successful");
+        require(!fundingSuccessful, "INVEST: Funding already successful");
         _;
     }
 
@@ -218,20 +218,20 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
      * @dev Check if the investment period has ended and if funding failed
      * @return bool Whether funding failed
      */
-    function checkFundingStatus() public returns (bool) {
-        // If funding is already successful or failed, return current status
-        if (fundingSuccessful) return false;
-        if (fundingFailed) return true;
-        
-        // If investment period has ended and target not reached, mark as failed
-        if (block.timestamp > proposal.investmentPeriod && fundsRaised < proposal.targetAmount) {
-            fundingFailed = true;
-            emit FundingFailed();
-            return true;
-        }
-        
+    function checkFundingStatus() public view returns (bool) {
+    // If funding is already successful, return true
+    if (fundingSuccessful) {
+        return true;
+    }
+    
+    // If investment period has ended and target not reached, return false
+    if (block.timestamp > proposal.investmentPeriod && fundsRaised < proposal.targetAmount) {
         return false;
     }
+
+    // If funding period is still active, return false
+    return false;
+}
 
     /**
      * @dev Pledge security tokens to the contract (done by general contractor)
@@ -266,6 +266,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
 
 function invest(uint256 amount) external nonReentrant notStopped whenFundingActive returns (bool success) {
     // Validate investment amount and conditions
+    require(!fundingSuccessful, "INVEST: Funding already successful");
     require(amount > 0, "INVEST: Amount must be greater than zero");
     require(tokensPledged, "INVEST: Security tokens not pledged");
     require(block.timestamp <= proposal.investmentPeriod, "INVEST: Investment period has ended");

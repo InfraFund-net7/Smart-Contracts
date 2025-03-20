@@ -50,7 +50,6 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
-    "ethers": "^6.13.5",
     "hardhat": "^2.22.19",
     "husky": "~9.1.6",
     "lint-staged": "~13.2.2"
