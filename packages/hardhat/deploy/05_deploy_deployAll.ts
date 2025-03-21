@@ -21,7 +21,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
   const SecurityToken = await deploy("SecurityToken", {
     from: clientSigner,
     args: [ethers.parseEther("1000000")],
-    log: true,
+    log: false,
   });
   console.log(`🔑 SecurityToken deployed at: ${SecurityToken.address}`);
   const clientBalance = await ethers.provider.getBalance(clientSigner);
@@ -39,7 +39,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
   const UtilityToken = await deploy("UtilityToken", {
     from: adminSigner,
     args: [ethers.parseEther("1000000")],
-    log: true,
+    log: false,
   });
   console.log(`💸 UtilityToken deployed at: ${UtilityToken.address}`);
   const adminBalance = await ethers.provider.getBalance(adminSigner);
@@ -57,7 +57,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
   const EnergyToken = await deploy("EnergyToken", {
     from: adminSigner,
     args: ["InfraPower", "IFPR"],
-    log: true,
+    log: false,
   });
   console.log(`🔋 EnergyToken deployed at: ${EnergyToken.address}`);
   console.log(`📛 Token Name: InfraPower`);
@@ -92,7 +92,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
       clientSigner,
       milestoneAmounts,
     ],
-    log: true,
+    log: false,
   });
   console.log(`🌍 CrowdFunding contract deployed at: ${CrowdFunding.address}`);
   console.log(`📛 SecurityToken: ${SecurityToken.address}`);

@@ -2,325 +2,241 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import hre from "hardhat";
 
 const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
-  const { deployments, getNamedAccounts, ethers } = hre;
+  const { deployments, ethers } = hre;
 
-  // Get signers instead of using hardcoded addresses
-  const {
+  console.log("🚀 Initializing investment process...");
+
+  // Get signers
+  const [
     adminSigner,
-    auditorSigner,
+    //auditorSigner,
     clientSigner,
     //generalContractorSigner,
-    // investorSigner1,
-    // investorSigner2,
-    // investorSigner3,
-  } = await getNamedAccounts();
+    investorSigner1,
+    investorSigner2,
+    //investorSigner3,
+  ] = await hre.ethers.getSigners();
+  console.log("👥 Signers retrieved successfully.");
 
-  // Fetch contract addresses dynamically from deployments
-
+  // Fetch contract addresses
+  console.log("🔍 Fetching deployed contract addresses...");
   const securityAddress = (await deployments.get("SecurityToken")).address;
   const utilityAddress = (await deployments.get("UtilityToken")).address;
   const crowdFundingAddress = (await deployments.get("CrowdFunding")).address;
   const energyAddress = (await deployments.get("EnergyToken")).address;
 
   // Fetching deployed contract instances
-  const securityToken = await ethers.getContractAt("UtilityToken", securityAddress);
+  console.log("📜 Retrieving contract instances...");
+  const securityToken = await ethers.getContractAt("SecurityToken", securityAddress);
   const utilityToken = await ethers.getContractAt("UtilityToken", utilityAddress);
   const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
   const energyToken = await ethers.getContractAt("EnergyToken", energyAddress);
-  //const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
-  // Set CrowdFunding contract in EnergyToken
 
+  // Link CrowdFunding contract to EnergyToken
   console.log(`🔗 Linking CrowdFunding to EnergyToken by ${adminSigner.address}...`);
   const tx = await energyToken.connect(adminSigner).setCrowdFundingContract(crowdFundingAddress);
   await tx.wait();
-  console.log(`💥 EnergyToken successfully linked to CrowdFunding by ${adminSigner.address}`);
+  console.log("✅ EnergyToken successfully linked to CrowdFunding.");
 
-  console.log("=== Starting CrowdFunding Investment Process ===");
+  console.log("📢 === Starting CrowdFunding Investment Process ===");
 
-  // Step 1: Client pledges SecurityTokens to ensure sufficient funds for all investors
-  console.log("\n--- Step 1: Client Pledges SecurityTokens ---");
+  // Step 1: Client pledges SecurityTokens
+  console.log("\n🔵 Step 1: Client Pledges SecurityTokens");
 
   const proposal = await crowdFunding.proposal();
   const targetAmount = proposal.targetAmount;
+  console.log(`🎯 Target funding amount: ${ethers.formatUnits(targetAmount, 18)} tokens`);
 
-  console.log(`Target funding amount: ${ethers.formatUnits(targetAmount, 18)} tokens`);
+  await securityToken.connect(clientSigner).transfer(clientSigner.address, targetAmount);
+  console.log(`✅ Transferred ${ethers.formatUnits(targetAmount, 18)} SecurityTokens to Client.`);
 
-  const approvalAmount = targetAmount;
-
-  await securityToken.connect(clientSigner).transfer(clientSigner.address, approvalAmount);
-  console.log(`✅ Transferred ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens to Client`);
-
-  // Verify if client has enough security tokens to pledge
+  // Verify client balance
   const clientSecurityBalance = await securityToken.balanceOf(clientSigner.address);
-  console.log(`Client's current security token balance: ${ethers.formatUnits(clientSecurityBalance, 18)} tokens`);
+  console.log(`💰 Client's current SecurityToken balance: ${ethers.formatUnits(clientSecurityBalance, 18)} tokens`);
 
-  if (clientSecurityBalance < approvalAmount) {
-    console.log(
-      `Warning: Client does not have sufficient security tokens. Has ${ethers.formatUnits(clientSecurityBalance, 18)}, needs ${ethers.formatUnits(approvalAmount, 18)}`,
-    );
+  if (clientSecurityBalance < targetAmount) {
+    console.warn("⚠️ Warning: Client does not have sufficient SecurityTokens.");
   }
 
-  // Client approves the required amount to be pledged
-  await securityToken.connect(clientSigner).approve(crowdFundingAddress, approvalAmount);
-  console.log(`✅ Approved ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens for the CrowdFunding contract`);
+  // Client approves and pledges tokens
+  await securityToken.connect(clientSigner).approve(crowdFundingAddress, targetAmount);
+  console.log("✅ Approved SecurityTokens for CrowdFunding contract.");
 
-  await crowdFunding.connect(clientSigner).pledgeTokens(approvalAmount);
-  console.log("✅ Tokens pledged successfully");
+  await crowdFunding.connect(clientSigner).pledgeTokens(targetAmount);
+  console.log("✅ Tokens pledged successfully.");
 
-  // Check if energy tokens are correctly updated
+  // Check contract balance
   const contractEnergyBalance = await energyToken.balanceOf(crowdFundingAddress);
-  console.log(`Contract's energy token balance after pledge: ${ethers.formatUnits(contractEnergyBalance, 18)} tokens`);
-
-  //  const auditorBalance = await utilityToken.balanceOf(auditorSigner.address);
-
-  //fix here need help Here
-
-  console.log("\n--- Transferring UtilityTokens to Investors ---");
-
-  // Step 2: Prepare investors with UtilityTokens for investment
-  console.log("\n--- Step 2: Prepare Investors with UtilityTokens ---");
-
-  const investorAmount = ethers.parseUnits("300", 18);
-  await utilityToken.connect(auditorSigner).transfer(investorSigner1.address, investorAmount);
-  console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to General Contractor`);
-
-  await utilityToken.connect(auditorSigner).transfer(investorSigner2.address, investorAmount);
-  console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to Client`);
-
-  // Step 3: Investors approve the contract to spend their UtilityTokens
-  console.log("\n--- Step 3: Investors Approve UtilityTokens ---");
-
-  const investorApprovalAmount = ethers.parseUnits("100", 18); // Example investment amount
-
-  await utilityToken.connect(investorSigner1).approve(crowdFundingAddress, investorApprovalAmount);
-  console.log(`✅ Client approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`);
-
-  await utilityToken.connect(investorSigner2).approve(crowdFundingAddress, investorApprovalAmount);
   console.log(
-    `✅ General Contractor approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`,
+    `📊 Contract's EnergyToken balance after pledge: ${ethers.formatUnits(contractEnergyBalance, 18)} tokens`,
   );
 
-  // Step 4: Investors transfer(invest) their UtilityTokens to the CrowdFunding contract
-  console.log("\n--- Step 4: Investors Pledge UtilityTokens ---");
+  // Step 2: Transfer UtilityTokens to investors
+  console.log("\n🟡 Step 2: Preparing Investors with UtilityTokens");
+  const investorAmount = ethers.parseUnits("200", 18);
+  await utilityToken.connect(adminSigner).transfer(investorSigner1.address, investorAmount);
+  console.log("✅ Transferred UtilityTokens to Investor 1.");
 
+  await utilityToken.connect(adminSigner).transfer(investorSigner2.address, investorAmount);
+  console.log("✅ Transferred UtilityTokens to Investor 2.");
+
+  // Step 3: Investors approve contract spending
+  console.log("\n🟢 Step 3: Investors Approve UtilityTokens");
+  const investorApprovalAmount = ethers.parseUnits("100", 18);
+
+  await utilityToken.connect(investorSigner1).approve(crowdFundingAddress, investorApprovalAmount);
+  console.log("✅ Investor 1 approved UtilityTokens for investment.");
+
+  await utilityToken.connect(investorSigner2).approve(crowdFundingAddress, investorApprovalAmount);
+  console.log("✅ Investor 2 approved UtilityTokens for investment.");
+
+  // Step 4: Investors invest in CrowdFunding
+  console.log("\n🟣 Step 4: Investors Pledge UtilityTokens");
   await crowdFunding.connect(investorSigner1).invest(investorApprovalAmount);
-  console.log(`✅ investor1 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
+  console.log("✅ Investor 1 invested UtilityTokens.");
 
   await crowdFunding.connect(investorSigner2).invest(investorApprovalAmount);
-  console.log(`✅ investor2 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
+  console.log("✅ Investor 2 invested UtilityTokens.");
 
-  // Step 5: Check contract's final balance of UtilityTokens
+  // Step 5: Check final contract balance
   const contractUtilityBalance = await utilityToken.balanceOf(crowdFundingAddress);
-  console.log(`Contract's final UtilityToken balance: ${ethers.formatUnits(contractUtilityBalance, 18)} tokens`);
+  console.log(`📊 Contract's final UtilityToken balance: ${ethers.formatUnits(contractUtilityBalance, 18)} tokens`);
 
-  console.log("=== Investment Process Completed ===");
+  console.log("🎉 === Investment Process Completed Successfully! ===");
 };
 
 const main = async () => {
-  await checkInvestment(hre);
+  try {
+    await checkInvestment(hre);
+  } catch (error) {
+    console.error("❌ Error encountered:", error);
+    process.exit(1);
+  }
 };
 
-main().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
-
-// //-----------------------------------------------------------------------
+main();
 
 // import { HardhatRuntimeEnvironment } from "hardhat/types";
-// import { DeployFunction } from "hardhat-deploy/types";
+// import hre from "hardhat";
 
-// const checkInvestment: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
-//   const { ethers } = hre;
+// const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
+//   const { deployments, getNamedAccounts, ethers } = hre;
 
-//   // Client and Investor address
-//   const clientAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-//   const investorAddress = "0x1CBd3b2770909D4e10f157cABC84C7264073C9Ec"; // Example investor address
-//   const auditorAddress = "0x71bE63f3384f5fb98995898A86B02Fb2426c5788";
-//   //const gcAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"; // General contractor address
-//   const securityAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-//   const utilityAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-//   const crowdFundingAddress = "0xBC9129Dc0487fc2E169941C75aABC539f208fb01";
-//   const energyAddress = "0x663F3ad617193148711d28f5334eE4Ed07016602";
+//   // Get signers instead of using hardcoded addresses
+//   const [
+//     adminSigner,
+//     auditorSigner,
+//     clientSigner,
+//     generalContractorSigner,
+//     investorSigner1,
+//     investorSigner2,
+//     investorSigner3,
+//   ] = await hre.ethers.getSigners();
 
-//   // Get deployed contracts
-//   const securityToken = await ethers.getContractAt("SecurityToken", securityAddress);
+//   // Fetch contract addresses dynamically from deployments
+
+//   const securityAddress = (await deployments.get("SecurityToken")).address;
+//   const utilityAddress = (await deployments.get("UtilityToken")).address;
+//   const crowdFundingAddress = (await deployments.get("CrowdFunding")).address;
+//   const energyAddress = (await deployments.get("EnergyToken")).address;
+
+//   // Fetching deployed contract instances
+//   const securityToken = await ethers.getContractAt("UtilityToken", securityAddress);
 //   const utilityToken = await ethers.getContractAt("UtilityToken", utilityAddress);
 //   const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
 //   const energyToken = await ethers.getContractAt("EnergyToken", energyAddress);
+//   //const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
+//   // Set CrowdFunding contract in EnergyToken
 
-//   // Get signers
-//   const clientSigner = await ethers.getSigner(clientAddress);
-//   const investorSigner = await ethers.getSigner(investorAddress);
-//   const auditorSigner = await ethers.getSigner(auditorAddress);
-//   const investorSigner2 = await ethers.getSigner("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"); // Another investor
+//   console.log(`🔗 Linking CrowdFunding to EnergyToken by ${adminSigner.address}...`);
+//   const tx = await energyToken.connect(adminSigner).setCrowdFundingContract(crowdFundingAddress);
+//   await tx.wait();
+//   console.log(`💥 EnergyToken successfully linked to CrowdFunding by ${adminSigner.address}`);
 
-//   console.log("=== Starting CrowdFunding Check ===");
+//   console.log("=== Starting CrowdFunding Investment Process ===");
 
-//   // Step 1: Client pledges SecurityTokens - ensure enough for all investors
-//   console.log("\n--- Step 1: Client pledges SecurityTokens ---");
-//   // Get target amount from contract to determine how many security tokens to pledge
+//   // Step 1: Client pledges SecurityTokens to ensure sufficient funds for all investors
+//   console.log("\n--- Step 1: Client Pledges SecurityTokens ---");
+
 //   const proposal = await crowdFunding.proposal();
 //   const targetAmount = proposal.targetAmount;
-//   console.log(`Target funding amount: ${ethers.formatUnits(targetAmount, 18)}`);
 
-//   // Ensure we pledge at least as many tokens as the target funding amount
+//   console.log(`Target funding amount: ${ethers.formatUnits(targetAmount, 18)} tokens`);
+
 //   const approvalAmount = targetAmount;
 
-//   // Check client's security token balance
-//   const clientSecurityBalance = await securityToken.balanceOf(clientAddress);
-//   console.log(`Client security token balance: ${ethers.formatUnits(clientSecurityBalance, 18)}`);
+//   await securityToken.connect(clientSigner).transfer(clientSigner.address, approvalAmount);
+//   console.log(`✅ Transferred ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens to Client`);
+
+//   // Verify if client has enough security tokens to pledge
+//   const clientSecurityBalance = await securityToken.balanceOf(clientSigner.address);
+//   console.log(`Client's current security token balance: ${ethers.formatUnits(clientSecurityBalance, 18)} tokens`);
 
 //   if (clientSecurityBalance < approvalAmount) {
 //     console.log(
-//       `Warning: Client has insufficient security tokens. Has ${ethers.formatUnits(clientSecurityBalance, 18)}, needs ${ethers.formatUnits(approvalAmount, 18)}`,
+//       `Warning: Client does not have sufficient security tokens. Has ${ethers.formatUnits(clientSecurityBalance, 18)}, needs ${ethers.formatUnits(approvalAmount, 18)}`,
 //     );
 //   }
 
+//   // Client approves the required amount to be pledged
 //   await securityToken.connect(clientSigner).approve(crowdFundingAddress, approvalAmount);
-//   console.log(`✅ SecurityToken approved for CrowdFunding contract: ${ethers.formatUnits(approvalAmount, 18)} tokens`);
+//   console.log(`✅ Approved ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens for the CrowdFunding contract`);
 
 //   await crowdFunding.connect(clientSigner).pledgeTokens(approvalAmount);
 //   console.log("✅ Tokens pledged successfully");
 
-//   // Check energy token balance of contract after pledge
+//   // Check if energy tokens are correctly updated
 //   const contractEnergyBalance = await energyToken.balanceOf(crowdFundingAddress);
-//   console.log(`Contract energy token balance after pledge: ${ethers.formatUnits(contractEnergyBalance, 18)}`);
+//   console.log(`Contract's energy token balance after pledge: ${ethers.formatUnits(contractEnergyBalance, 18)} tokens`);
 
-//   // Step 2: Prepare investors with UtilityTokens
-//   console.log("\n--- Step 2: Prepare investors with UtilityTokens ---");
+//   //  const adminBalance = await utilityToken.balanceOf(adminSigner.address);
 
-//   // Transfer utility tokens to investors (smaller amounts for testing)
-//   const investorAmount = ethers.parseUnits("300", 18);
-//   await utilityToken.connect(auditorSigner).transfer(investorAddress, investorAmount);
-//   console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to investor 1`);
+//   console.log("\n--- Transferring UtilityTokens to Investors ---");
+//   await utilityToken.connect(adminSigner).transfer(adminSigner.address, approvalAmount);
+//   console.log(`✅ Transferred ${ethers.formatUnits(approvalAmount, 18)} utilityTokens(MockUSDC to admin`);
 
-//   // For testing, let's make the second investment smaller
-//   const investor2Amount = ethers.parseUnits("800", 18);
-//   await utilityToken.connect(auditorSigner).transfer(investorSigner2.address, investor2Amount);
-//   console.log(`✅ Transferred ${ethers.formatUnits(investor2Amount, 18)} UtilityTokens to investor 2`);
+//   // Step 2: Prepare investors with UtilityTokens for investment
+//   console.log("\n--- Step 2: Prepare Investors with UtilityTokens ---");
 
-//   // Step 3: First investor makes partial investment
-//   console.log("\n--- Step 3: First investor makes partial investment ---");
-//   await utilityToken.connect(investorSigner).approve(crowdFundingAddress, investorAmount);
-//   console.log("✅ Investor 1 approved UtilityTokens");
+//   const investorAmount = ethers.parseUnits("200", 18);
+//   await utilityToken.connect(adminSigner).transfer(investorSigner1.address, investorAmount);
+//   console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to General Contractor`);
 
-//   await crowdFunding.connect(investorSigner).invest(investorAmount);
-//   console.log("✅ Investor 1 investment successful");
+//   await utilityToken.connect(adminSigner).transfer(investorSigner2.address, investorAmount);
+//   console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to Client`);
 
-//   // Check funding status
-//   let fundsRaised = await crowdFunding.fundsRaised();
-//   console.log(`Funds raised after first investment: ${ethers.formatUnits(fundsRaised, 18)}`);
+//   // Step 3: Investors approve the contract to spend their UtilityTokens
+//   console.log("\n--- Step 3: Investors Approve UtilityTokens ---");
 
-//   let fundingStatus = await crowdFunding.fundingSuccessful();
-//   console.log(`Funding status after first investment: ${fundingStatus ? "Successful" : "Not yet successful"}`);
+//   const investorApprovalAmount = ethers.parseUnits("100", 18); // Example investment amount
 
-//   // Step 4: Modify contract state for testing if needed
-//   // For testing purposes, we can simulate that funding is successful
-//   // This might require a special function in the contract or direct state modification in a test environment
-//   console.log("\n--- Step 4: Second investor invests ---");
+//   await utilityToken.connect(investorSigner1).approve(crowdFundingAddress, investorApprovalAmount);
+//   console.log(`✅ investor1 approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`);
 
-//   await utilityToken.connect(investorSigner2).approve(crowdFundingAddress, investor2Amount);
-//   console.log("✅ Investor 2 approved UtilityTokens");
+//   await utilityToken.connect(investorSigner2).approve(crowdFundingAddress, investorApprovalAmount);
+//   console.log(`✅ investor2 approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`);
 
-//   try {
-//     // If target amount is very high, we may need to make the contract think funding is successful
-//     // This is a test-only approach - in production, we would need to meet the actual target
-//     if (targetAmount > fundsRaised + investor2Amount) {
-//       console.log(`Note: Target amount (${ethers.formatUnits(targetAmount, 18)}) is higher than what we're investing.`);
-//       console.log("In a real scenario, the funding target would need to be met.");
+//   // Step 4: Investors transfer(invest) their UtilityTokens to the CrowdFunding contract
+//   console.log("\n--- Step 4: Investors Pledge UtilityTokens ---");
 
-//       // For testing, we'll still proceed with the smaller investment
-//     }
+//   await crowdFunding.connect(investorSigner1).invest(investorApprovalAmount);
+//   console.log(`✅ investor1 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
 
-//     const investTx = await crowdFunding.connect(investorSigner2).invest(investor2Amount);
-//     await investTx.wait();
-//     console.log("✅ Investor 2 investment successful");
+//   await crowdFunding.connect(investorSigner2).invest(investorApprovalAmount);
+//   console.log(`✅ investor2 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
 
-//     // Update funds raised
-//     fundsRaised = await crowdFunding.fundsRaised();
-//     console.log(`Total funds raised: ${ethers.formatUnits(fundsRaised, 18)}`);
-//   } catch (error) {
-//     console.log("Error during investment. This might be expected if we're not meeting the target amount.");
-//     console.log(error);
-//   }
+//   // Step 5: Check contract's final balance of UtilityTokens
+//   const contractUtilityBalance = await utilityToken.balanceOf(crowdFundingAddress);
+//   console.log(`Contract's final UtilityToken balance: ${ethers.formatUnits(contractUtilityBalance, 18)} tokens`);
 
-//   // Check funding status again
-//   fundingStatus = await crowdFunding.fundingSuccessful();
-//   console.log(`Funding status after second investment: ${fundingStatus ? "Successful" : "Not yet successful"}`);
-
-//   if (!fundingStatus) {
-//     console.log("Funding not successful. Forcing contract state for testing purposes...");
-//     // This would require a special function in the contract for testing
-//     // In a real deployment, we would need to meet the actual funding target
-//   }
-
-//   // Check if energy tokens are released
-//   const energyTokensReleased = await crowdFunding.energyTokensReleased();
-//   console.log(`Energy tokens released: ${energyTokensReleased ? "Yes" : "No"}`);
-
-//   // Step 5: Investors claim their EnergyTokens only if funding was successful
-//   if (fundingStatus && energyTokensReleased) {
-//     console.log("\n--- Step 5: Investors claim their EnergyTokens ---");
-
-//     // Check contract's energy token balance before claims
-//     const contractBalance = await energyToken.balanceOf(crowdFundingAddress);
-//     console.log(`Contract's energy token balance before claims: ${ethers.formatUnits(contractBalance, 18)}`);
-
-//     // Check pending energy tokens
-//     const pending1 = await crowdFunding.pendingEnergyTokens(investorAddress);
-//     console.log(`Investor 1 pending EnergyTokens: ${ethers.formatUnits(pending1, 18)}`);
-
-//     try {
-//       // Only claim if there are pending tokens and contract has enough balance
-//       if (pending1 > 0 && contractBalance >= pending1) {
-//         const claimTx1 = await crowdFunding.connect(investorSigner).claimEnergyTokens();
-//         await claimTx1.wait();
-//         console.log("✅ Investor 1 claimed EnergyTokens");
-
-//         // Check investor 1's balance
-//         const balance1 = await energyToken.balanceOf(investorAddress);
-//         console.log(`Investor 1 EnergyToken balance: ${ethers.formatUnits(balance1, 18)}`);
-//       } else {
-//         console.log("Skipping claim for investor 1 - insufficient tokens or nothing to claim");
-//       }
-//     } catch (error) {
-//       console.log("Error claiming tokens for investor 1:", error);
-//     }
-
-//     // Update contract balance
-//     const contractBalanceAfter1 = await energyToken.balanceOf(crowdFundingAddress);
-//     console.log(`Contract's energy token balance after first claim: ${ethers.formatUnits(contractBalanceAfter1, 18)}`);
-
-//     // Investor 2 claims tokens
-//     const pending2 = await crowdFunding.pendingEnergyTokens(investorSigner2.address);
-//     console.log(`Investor 2 pending EnergyTokens: ${ethers.formatUnits(pending2, 18)}`);
-
-//     try {
-//       // Only claim if there are pending tokens and contract has enough balance
-//       if (pending2 > 0 && contractBalanceAfter1 >= pending2) {
-//         const claimTx2 = await crowdFunding.connect(investorSigner2).claimEnergyTokens();
-//         await claimTx2.wait();
-//         console.log("✅ Investor 2 claimed EnergyTokens");
-
-//         // Check investor 2's balance
-//         const balance2 = await energyToken.balanceOf(investorSigner2.address);
-//         console.log(`Investor 2 EnergyToken balance: ${ethers.formatUnits(balance2, 18)}`);
-//       } else {
-//         console.log("Skipping claim for investor 2 - insufficient tokens or nothing to claim");
-//         console.log(
-//           `Contract has ${ethers.formatUnits(contractBalanceAfter1, 18)} tokens, investor 2 needs ${ethers.formatUnits(pending2, 18)}`,
-//         );
-//       }
-//     } catch (error) {
-//       console.log("Error claiming tokens for investor 2:", error);
-//     }
-//   } else {
-//     console.log("\nSkipping token claims as funding was not successful or tokens were not released");
-//   }
-
-//   console.log("\n=== CrowdFunding Check Complete ===");
+//   console.log("=== Investment Process Completed ===");
 // };
 
-// export default checkInvestment;
-// checkInvestment.tags = ["check"];
+// const main = async () => {
+//   await checkInvestment(hre);
+// };
+
+// main().catch(error => {
+//   console.error(error);
+//   process.exit(1);
+// });

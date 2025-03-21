@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   31337: {
     CrowdFunding: {
-      address: "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+      address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
       abi: [
         {
           inputs: [
@@ -918,7 +918,7 @@ const deployedContracts = {
       },
     },
     EnergyToken: {
-      address: "0x057ef64E23666F000b34aE31332854aCBd1c8544",
+      address: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
       abi: [
         {
           inputs: [
@@ -1315,7 +1315,7 @@ const deployedContracts = {
       },
     },
     SecurityToken: {
-      address: "0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f",
+      address: "0x663F3ad617193148711d28f5334eE4Ed07016602",
       abi: [
         {
           inputs: [
@@ -1650,7 +1650,7 @@ const deployedContracts = {
       },
     },
     UtilityToken: {
-      address: "0x948B3c65b89DF0B4894ABE91E6D02FE579834F8F",
+      address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       abi: [
         {
           inputs: [
