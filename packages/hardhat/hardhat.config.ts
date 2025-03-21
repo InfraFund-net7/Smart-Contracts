@@ -42,11 +42,15 @@ const config: HardhatUserConfig = {
   },
   defaultNetwork: "localhost",
   namedAccounts: {
-    deployer: {
-      // By default, it will take the first Hardhat account as the deployer
-      default: 0,
-    },
+    adminSigner: 0, // First signer will be the admin
+    auditorSigner: 1, // Second signer will be the auditor
+    clientSigner: 2, // Third signer will be the client
+    generalContractorSigner: 3, // Fourth signer will be the general contractor
+    investorSigner1: 4, // Fifth signer will be investor 1
+    investorSigner2: 5, // Sixth signer will be investor 2
+    investorSigner3: 6, // Seventh signer will be investor 3
   },
+
   networks: {
     // View the networks that are pre-configured.
     // If the network you are looking for is not here you can add new network settings

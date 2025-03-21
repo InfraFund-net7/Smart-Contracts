@@ -2,21 +2,21 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import hre from "hardhat";
 
 const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
-  const { ethers, deployments } = hre;
+  const { deployments, getNamedAccounts, ethers } = hre;
 
   // Get signers instead of using hardcoded addresses
-  const [deploySigner, clientSigner, auditorSigner, investorSigner1, investorSigner2, investorSigner3] =
-    await ethers.getSigners();
-
-  // Log the addresses of the signers for debugging
-  console.log(`Deployer Address: ${deploySigner.address}`);
-  console.log(`Client Address: ${clientSigner.address}`);
-  console.log(`Auditor Address: ${auditorSigner.address}`);
-  console.log(`General Contractor Address: ${investorSigner1.address}`);
-  console.log(`General Contractor Address: ${investorSigner2.address}`);
-  console.log(`General Contractor Address: ${investorSigner3.address}`);
+  const {
+    adminSigner,
+    auditorSigner,
+    clientSigner,
+    //generalContractorSigner,
+    // investorSigner1,
+    // investorSigner2,
+    // investorSigner3,
+  } = await getNamedAccounts();
 
   // Fetch contract addresses dynamically from deployments
+
   const securityAddress = (await deployments.get("SecurityToken")).address;
   const utilityAddress = (await deployments.get("UtilityToken")).address;
   const crowdFundingAddress = (await deployments.get("CrowdFunding")).address;
@@ -30,10 +30,10 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
   //const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
   // Set CrowdFunding contract in EnergyToken
 
-  console.log(`🔗 Linking CrowdFunding to EnergyToken by ${auditorSigner.address}...`);
-  const tx = await energyToken.connect(auditorSigner).setCrowdFundingContract(crowdFundingAddress);
+  console.log(`🔗 Linking CrowdFunding to EnergyToken by ${adminSigner.address}...`);
+  const tx = await energyToken.connect(adminSigner).setCrowdFundingContract(crowdFundingAddress);
   await tx.wait();
-  console.log(`💥 EnergyToken successfully linked to CrowdFunding by ${auditorSigner.address}`);
+  console.log(`💥 EnergyToken successfully linked to CrowdFunding by ${adminSigner.address}`);
 
   console.log("=== Starting CrowdFunding Investment Process ===");
 
@@ -47,7 +47,7 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
 
   const approvalAmount = targetAmount;
 
-  await securityToken.connect(deploySigner).transfer(clientSigner.address, approvalAmount);
+  await securityToken.connect(clientSigner).transfer(clientSigner.address, approvalAmount);
   console.log(`✅ Transferred ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens to Client`);
 
   // Verify if client has enough security tokens to pledge
