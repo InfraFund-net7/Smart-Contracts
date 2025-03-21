@@ -5,17 +5,16 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
   const { ethers, deployments } = hre;
 
   // Get signers instead of using hardcoded addresses
-  const signers = await ethers.getSigners();
-  const deploySigner = signers[0]; // Use the first signer as the deployer for everything
-  const clientSigner = signers[1];
-  const auditorSigner = signers[2];
-  const generalContractorSigner = signers[3];
+  const [deploySigner, clientSigner, auditorSigner, investorSigner1, investorSigner2, investorSigner3] =
+    await ethers.getSigners();
 
   // Log the addresses of the signers for debugging
   console.log(`Deployer Address: ${deploySigner.address}`);
   console.log(`Client Address: ${clientSigner.address}`);
   console.log(`Auditor Address: ${auditorSigner.address}`);
-  console.log(`General Contractor Address: ${generalContractorSigner.address}`);
+  console.log(`General Contractor Address: ${investorSigner1.address}`);
+  console.log(`General Contractor Address: ${investorSigner2.address}`);
+  console.log(`General Contractor Address: ${investorSigner3.address}`);
 
   // Fetch contract addresses dynamically from deployments
   const securityAddress = (await deployments.get("SecurityToken")).address;
@@ -24,10 +23,17 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
   const energyAddress = (await deployments.get("EnergyToken")).address;
 
   // Fetching deployed contract instances
-  const securityToken = await ethers.getContractAt("SecurityToken", securityAddress);
+  const securityToken = await ethers.getContractAt("UtilityToken", securityAddress);
   const utilityToken = await ethers.getContractAt("UtilityToken", utilityAddress);
   const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
   const energyToken = await ethers.getContractAt("EnergyToken", energyAddress);
+  //const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingAddress);
+  // Set CrowdFunding contract in EnergyToken
+
+  console.log(`🔗 Linking CrowdFunding to EnergyToken by ${auditorSigner.address}...`);
+  const tx = await energyToken.connect(auditorSigner).setCrowdFundingContract(crowdFundingAddress);
+  await tx.wait();
+  console.log(`💥 EnergyToken successfully linked to CrowdFunding by ${auditorSigner.address}`);
 
   console.log("=== Starting CrowdFunding Investment Process ===");
 
@@ -40,6 +46,9 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`Target funding amount: ${ethers.formatUnits(targetAmount, 18)} tokens`);
 
   const approvalAmount = targetAmount;
+
+  await securityToken.connect(deploySigner).transfer(clientSigner.address, approvalAmount);
+  console.log(`✅ Transferred ${ethers.formatUnits(approvalAmount, 18)} SecurityTokens to Client`);
 
   // Verify if client has enough security tokens to pledge
   const clientSecurityBalance = await securityToken.balanceOf(clientSigner.address);
@@ -62,14 +71,20 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
   const contractEnergyBalance = await energyToken.balanceOf(crowdFundingAddress);
   console.log(`Contract's energy token balance after pledge: ${ethers.formatUnits(contractEnergyBalance, 18)} tokens`);
 
+  //  const auditorBalance = await utilityToken.balanceOf(auditorSigner.address);
+
+  //fix here need help Here
+
+  console.log("\n--- Transferring UtilityTokens to Investors ---");
+
   // Step 2: Prepare investors with UtilityTokens for investment
   console.log("\n--- Step 2: Prepare Investors with UtilityTokens ---");
 
   const investorAmount = ethers.parseUnits("300", 18);
-  await utilityToken.connect(auditorSigner).transfer(generalContractorSigner.address, investorAmount);
+  await utilityToken.connect(auditorSigner).transfer(investorSigner1.address, investorAmount);
   console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to General Contractor`);
 
-  await utilityToken.connect(auditorSigner).transfer(clientSigner.address, investorAmount);
+  await utilityToken.connect(auditorSigner).transfer(investorSigner2.address, investorAmount);
   console.log(`✅ Transferred ${ethers.formatUnits(investorAmount, 18)} UtilityTokens to Client`);
 
   // Step 3: Investors approve the contract to spend their UtilityTokens
@@ -77,22 +92,22 @@ const checkInvestment = async function (hre: HardhatRuntimeEnvironment) {
 
   const investorApprovalAmount = ethers.parseUnits("100", 18); // Example investment amount
 
-  await utilityToken.connect(clientSigner).approve(crowdFundingAddress, investorApprovalAmount);
+  await utilityToken.connect(investorSigner1).approve(crowdFundingAddress, investorApprovalAmount);
   console.log(`✅ Client approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`);
 
-  await utilityToken.connect(generalContractorSigner).approve(crowdFundingAddress, investorApprovalAmount);
+  await utilityToken.connect(investorSigner2).approve(crowdFundingAddress, investorApprovalAmount);
   console.log(
     `✅ General Contractor approved ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens for investment`,
   );
 
-  // Step 4: Investors pledge their UtilityTokens to the CrowdFunding contract
+  // Step 4: Investors transfer(invest) their UtilityTokens to the CrowdFunding contract
   console.log("\n--- Step 4: Investors Pledge UtilityTokens ---");
 
-  await crowdFunding.connect(clientSigner).invest(investorApprovalAmount);
-  console.log(`✅ Client pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
+  await crowdFunding.connect(investorSigner1).invest(investorApprovalAmount);
+  console.log(`✅ investor1 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
 
-  await crowdFunding.connect(generalContractorSigner).invest(investorApprovalAmount);
-  console.log(`✅ General Contractor pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
+  await crowdFunding.connect(investorSigner2).invest(investorApprovalAmount);
+  console.log(`✅ investor2 pledged ${ethers.formatUnits(investorApprovalAmount, 18)} UtilityTokens`);
 
   // Step 5: Check contract's final balance of UtilityTokens
   const contractUtilityBalance = await utilityToken.balanceOf(crowdFundingAddress);

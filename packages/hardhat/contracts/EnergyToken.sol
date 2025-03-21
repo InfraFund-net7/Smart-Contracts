@@ -31,23 +31,3 @@ contract EnergyToken is ERC20 {
         _mint(to, amount);
     }
 }
-
-// // EnergyToken: A utility ERC-20 token that only a specific contract can mint
-// contract EnergyToken is ERC20, Ownable {
-//     address public immutable crowdfundingContract; // Only this contract can mint
-
-//     constructor(
-//         string memory name,
-//         string memory symbol,
-//         address _crowdfundingContract
-//     ) ERC20(name, symbol) Ownable(msg.sender) {
-//         require(_crowdfundingContract != address(0), "Invalid contract address");
-//         crowdfundingContract = _crowdfundingContract; // Set once, immutable
-//     }
-
-//     // Only the crowdfunding contract can mint
-//     function mint(address to, uint256 amount) external {
-//         require(msg.sender == crowdfundingContract, "Only crowdfunding contract can mint");
-//         _mint(to, amount);
-//     }
-// }
