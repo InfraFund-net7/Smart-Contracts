@@ -5,59 +5,88 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
   const { deployments, ethers, getNamedAccounts } = hre;
   const { deploy } = deployments;
 
-  // 1. Get signers (assuming you're using named accounts in your hardhat.config.js)
-  const {
-    adminSigner,
-    auditorSigner,
-    clientSigner,
-    generalContractorSigner,
-    // investorSigner1,
-    // investorSigner2,
-    // investorSigner3,
-  } = await getNamedAccounts();
+  // ------------------------
+  // Variables for easy adjustment
+  // ------------------------
 
-  // 2. Deploy SecurityToken
+  // Minting amounts
+  const securityTokenMintAmount = ethers.parseEther("1000000");
+  const utilityTokenMintAmount = ethers.parseEther("1000000");
+
+  // Milestones
+  const milestoneAmounts = [
+    ethers.parseEther("25000"), // Example milestone amounts in ethers
+    ethers.parseEther("25000"),
+    ethers.parseEther("25000"),
+    ethers.parseEther("25000"),
+  ];
+
+  // Target amount for funding
+  const targetAmount = ethers.parseEther("100000");
+
+  // Investment period (30 days from now)
+  const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+  const investmentPeriod = currentTime + 2592000; // 30 days in seconds
+
+  // ------------------------
+  // Get named accounts
+  // ------------------------
+
+  const { adminSigner, auditorSigner, clientSigner, generalContractorSigner } = await getNamedAccounts();
+
+  // ------------------------
+  // Deploy SecurityToken
+  // ------------------------
+
   console.log("🚀 Deploying SecurityToken...");
   const SecurityToken = await deploy("SecurityToken", {
     from: clientSigner,
-    args: [ethers.parseEther("1000000")],
-    log: false,
+    args: [securityTokenMintAmount],
+    log: true,
   });
   console.log(`🔑 SecurityToken deployed at: ${SecurityToken.address}`);
   const clientBalance = await ethers.provider.getBalance(clientSigner);
+  console.log(`Client's SecurityToken balance: ${ethers.formatUnits(clientBalance, 18)} tokens`);
+
   if (clientBalance > 0) {
     console.log("✅ Minting was successful, balance is greater than zero.");
   } else {
     console.log("❌ Minting failed, balance is 0.");
   }
-  console.log(`Client's SecurityToken balance after deployment: ${ethers.formatUnits(clientBalance, 18)} tokens`);
   console.log(`👤 Deployed by: ${clientSigner}`);
   console.log("----------------------------------------------------------------------------");
 
-  // 3. Deploy UtilityToken
+  // ------------------------
+  // Deploy UtilityToken
+  // ------------------------
+
   console.log("🚀 Deploying UtilityToken...");
   const UtilityToken = await deploy("UtilityToken", {
     from: adminSigner,
-    args: [ethers.parseEther("1000000")],
-    log: false,
+    args: [utilityTokenMintAmount],
+    log: true,
   });
   console.log(`💸 UtilityToken deployed at: ${UtilityToken.address}`);
   const adminBalance = await ethers.provider.getBalance(adminSigner);
+  console.log(`Admin's UtilityToken balance: ${ethers.formatUnits(adminBalance, 18)} tokens`);
+
   if (adminBalance > 0) {
     console.log("✅ Minting was successful, balance is greater than zero.");
   } else {
     console.log("❌ Minting failed, balance is 0.");
   }
-  console.log(`admin's UtilityToken balance after deployment: ${ethers.formatUnits(adminBalance, 18)} tokens`);
   console.log(`👤 Deployed by: ${adminSigner}`);
   console.log("----------------------------------------------------------------------------");
 
-  // 4. Deploy EnergyToken
+  // ------------------------
+  // Deploy EnergyToken
+  // ------------------------
+
   console.log("🚀 Deploying EnergyToken...");
   const EnergyToken = await deploy("EnergyToken", {
     from: adminSigner,
     args: ["InfraPower", "IFPR"],
-    log: false,
+    log: true,
   });
   console.log(`🔋 EnergyToken deployed at: ${EnergyToken.address}`);
   console.log(`📛 Token Name: InfraPower`);
@@ -66,18 +95,10 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
   console.log("⚡️ Energy tokens will be minted upon client pledge of SecurityTokens.");
   console.log("----------------------------------------------------------------------------");
 
-  // 5. Define the missing variables
-  const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
-  const investmentPeriod = currentTime + 2592000; // 30 days (in seconds)
-  const targetAmount = ethers.parseEther("100000"); // Example target amount in ethers
-  const milestoneAmounts = [
-    ethers.parseEther("25000"), // Example milestone amounts in ethers
-    ethers.parseEther("25000"),
-    ethers.parseEther("25000"),
-    ethers.parseEther("25000"),
-  ];
+  // ------------------------
+  // Deploy CrowdFunding
+  // ------------------------
 
-  // 6. Deploy CrowdFunding
   console.log("🚀 Deploying CrowdFunding...");
   const CrowdFunding = await deploy("CrowdFunding", {
     from: adminSigner,
@@ -92,7 +113,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
       clientSigner,
       milestoneAmounts,
     ],
-    log: false,
+    log: true,
   });
   console.log(`🌍 CrowdFunding contract deployed at: ${CrowdFunding.address}`);
   console.log(`📛 SecurityToken: ${SecurityToken.address}`);
