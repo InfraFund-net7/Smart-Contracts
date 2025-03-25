@@ -303,85 +303,69 @@ function claimRefund() external nonReentrant {
 }
 
 
-  /**
- * @dev Withdraw security tokens if funding failed
+/**
+ * @dev Sign agreement with a signature to prevent replay attacks
+ * @param agreementHash Hash of the agreement
+ * @param signature Signature of the agreement
+ *
+ * Note:
+ * In the future, off-chain signature verification can be done using a backend service.
+ * The backend will be responsible for verifying the signature using the same EIP-712
+ * compliant message structure and comparing the recovered signer address with the 
+ * expected signer (e.g., generalContractor). This will prevent replay attacks 
+ * by ensuring the validity of the signature before interacting with the contract.
  */
-function withdrawSecurityTokens() external nonReentrant onlyClient {
-    // Check or update funding status
-    updateFundingStatus();  // Use the updated method to check funding status
+function signAgreement(bytes32 agreementHash, bytes calldata signature) external nonReentrant notStopped onlyGeneralContractor {
+    require(!gcAgreement, "Already signed");
+    require(fundingStatus == FundingStatus.Successful, "Funding must be successful first");
     
-    // Ensure that the funding has failed
-    require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
-    require(tokensPledged, "No tokens pledged");
-    require(!securityTokensWithdrawn, "Security tokens already withdrawn");
+    // Create EIP-712 compliant message
+    bytes32 digest = keccak256(
+        abi.encodePacked(
+            "\x19\x01",
+            DOMAIN_SEPARATOR,
+            keccak256(abi.encode(agreementHash, address(this), block.chainid))
+        )
+    );
     
-    // Mark the security tokens as withdrawn
-    securityTokensWithdrawn = true;
-    
-    // Transfer the security tokens back to the client
-    uint256 amount = securityToken.balanceOf(address(this));
-    securityToken.safeTransfer(client, amount);
-    
-    // Emit event for the withdrawal
-    emit SecurityTokensWithdrawn(client, amount);
+    address signer = ECDSA.recover(digest, signature);
+    require(signer == generalContractor, "Invalid signature");
+
+    gcAgreement = true;
+    emit AgreementSigned(generalContractor);
 }
 
-    // /**
-    //  * @dev Sign agreement with a signature to prevent replay attacks
-    //  * @param agreementHash Hash of the agreement
-    //  * @param signature Signature of the agreement
-    //  */
-    // function signAgreement(bytes32 agreementHash, bytes calldata signature) external nonReentrant notStopped onlyGeneralContractor {
-    //     require(!gcAgreement, "Already signed");
-    //     require(fundingSuccessful, "Funding must be successful first");
-        
-    //     // Create EIP-712 compliant message
-    //     bytes32 digest = keccak256(
-    //         abi.encodePacked(
-    //             "\x19\x01",
-    //             DOMAIN_SEPARATOR,
-    //             keccak256(abi.encode(agreementHash, address(this), block.chainid))
-    //         )
-    //     );
-        
-    //     address signer = ECDSA.recover(digest, signature);
-    //     require(signer == generalContractor, "Invalid signature");
+/**
+ * @dev Verify a milestone completion
+ * @param milestoneIndex Index of the milestone to verify
+ */
+function verifyMilestone(uint256 milestoneIndex) external nonReentrant notStopped onlyAuditor {
+    require(fundingStatus == FundingStatus.Successful, "Funding must be successful first");
+    require(gcAgreement, "General contractor must sign agreement first");
+    require(milestoneIndex < milestones.length, "Invalid milestone index");
+    require(!milestones[milestoneIndex].verified, "Milestone already verified");
+    
+    milestones[milestoneIndex].verified = true;
+    emit MilestoneVerified(milestoneIndex);
+}
 
-    //     gcAgreement = true;
-    //     emit AgreementSigned(generalContractor);
-    // }
-
-    // /**
-    //  * @dev Verify a milestone completion
-    //  * @param milestoneIndex Index of the milestone to verify
-    //  */
-    // function verifyMilestone(uint256 milestoneIndex) external nonReentrant notStopped onlyAuditor {
-    //     require(fundingSuccessful, "Funding must be successful first");
-    //     require(gcAgreement, "General contractor must sign agreement first");
-    //     require(milestoneIndex < milestones.length, "Invalid milestone index");
-    //     require(!milestones[milestoneIndex].verified, "Milestone already verified");
+    /**
+     * @dev Withdraw funds for completed milestone
+     * @param milestoneIndex Index of the verified milestone
+     */
+    function withdrawByGC(uint256 milestoneIndex) external nonReentrant notStopped onlyGeneralContractor {
+        require(milestoneIndex < milestones.length, "Invalid milestone index");
+        require(milestones[milestoneIndex].verified, "Milestone not verified");
+        require(!milestones[milestoneIndex].fundsReleased, "Funds already released");
         
-    //     milestones[milestoneIndex].verified = true;
-    //     emit MilestoneVerified(milestoneIndex);
-    // }
-
-    // /**
-    //  * @dev Withdraw funds for completed milestone
-    //  * @param milestoneIndex Index of the verified milestone
-    //  */
-    // function withdrawByGC(uint256 milestoneIndex) external nonReentrant notStopped onlyGeneralContractor {
-    //     require(milestoneIndex < milestones.length, "Invalid milestone index");
-    //     require(milestones[milestoneIndex].verified, "Milestone not verified");
-    //     require(!milestones[milestoneIndex].fundsReleased, "Funds already released");
+        // Update state before transfer
+        milestones[milestoneIndex].fundsReleased = true;
         
-    //     // Update state before transfer
-    //     milestones[milestoneIndex].fundsReleased = true;
+        uint256 amount = milestones[milestoneIndex].amount;
+        utilityToken.safeTransfer(generalContractor, amount);
         
-    //     uint256 amount = milestones[milestoneIndex].amount;
-    //     utilityToken.safeTransfer(generalContractor, amount);
-        
-    //     emit FundsWithdrawn(milestoneIndex, amount);
-    // }
+        emit FundsWithdrawn(milestoneIndex, amount);
+    }
 
     // /**
     //  * @dev Request extra funds with a proposal
