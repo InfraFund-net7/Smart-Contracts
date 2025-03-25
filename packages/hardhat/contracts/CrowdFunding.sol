@@ -19,6 +19,9 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     using SafeERC20 for IEnergyToken;
     using ECDSA for bytes32;
 
+    enum FundingStatus { Active, Successful, Failed }
+    FundingStatus public fundingStatus;
+
     struct Proposal {
         uint256 investmentPeriod;
         uint256 targetAmount;
@@ -48,11 +51,8 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     address public immutable client;
     IERC20 public immutable securityToken;
     IERC20 public immutable utilityToken;
-    //IERC20 public immutable energyToken;
-   // EnergyToken public immutable energyToken;
     IEnergyToken public energyToken;
 
-    
     // State variables
     Proposal public proposal;
     Milestone[] public milestones;
@@ -68,8 +68,6 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     
     // Status flags
     bool public tokensPledged;
-    bool public fundingSuccessful;
-    bool public fundingFailed;
     bool public securityTokensWithdrawn;
     bool public gcAgreement;
     bool public emergencyStop;
@@ -96,58 +94,26 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event SecurityTokensWithdrawn(address indexed generalContractor, uint256 amount);
     event EnergyTokensClaimed(address indexed investor, uint256 amount);
 
-    /**
-     * @dev Modifier to check if emergency stop is not activated
-     */
     modifier notStopped() {
         require(!emergencyStop, "Contract is in emergency stop");
         _;
     }
 
-    /**
-     * @dev Modifier to allow only the auditor to call a function
-     */
     modifier onlyAuditor() {
         require(msg.sender == auditor, "Only auditor can call this function");
         _;
     }
 
-    /**
-     * @dev Modifier to allow only the general contractor to call a function
-     */
     modifier onlyGeneralContractor() {
         require(msg.sender == generalContractor, "Only general contractor can call this function");
         _;
     }
 
-    /**
-     * @dev Modifier to allow only the client to call a function
-     */
     modifier onlyClient() {
         require(msg.sender == client, "Only client can call this function");
         _;
     }
 
-    /**
-     * @dev Modifier to check if funding is active
-     */
-    modifier whenFundingActive() {
-        require(!fundingFailed, "Funding has failed");
-        require(!fundingSuccessful, "INVEST: Funding already successful");
-        _;
-    }
-
-    /**
-     * @dev Constructor to initialize the contract with necessary parameters
-     * @param _securityToken Address of the security token
-     * @param _utilityToken Address of the utility token
-     * @param _energyToken Address of the energy token
-     * @param _investmentPeriod Duration of the investment period
-     * @param _targetAmount Target funding amount
-     * @param _auditor Address of the auditor
-     * @param _generalContractor Address of the general contractor
-     * @param _milestoneAmounts Array of milestone amounts
-     */
     constructor(
         address _securityToken,
         address _utilityToken,
@@ -164,7 +130,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         require(_energyToken != address(0), "Energy token cannot be zero address");
         require(_auditor != address(0), "Auditor cannot be zero address");
         require(_generalContractor != address(0), "General contractor cannot be zero address");
-        require(_client != address(0), "client cannot be zero address");
+        require(_client != address(0), "Client cannot be zero address");
         require(_investmentPeriod > block.timestamp, "Investment period must be in the future");
         require(_targetAmount > 0, "Target amount must be greater than zero");
         require(_milestoneAmounts.length > 0, "Must have at least one milestone");
@@ -172,12 +138,12 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         securityToken = IERC20(_securityToken);
         utilityToken = IERC20(_utilityToken);
         energyToken = IEnergyToken(_energyToken);
-        energyToken = IEnergyToken(_energyToken);  // Initialize EnergyToken
-
         proposal = Proposal({investmentPeriod: _investmentPeriod, targetAmount: _targetAmount});
         auditor = _auditor;
         generalContractor = _generalContractor;
-        client=_client;
+        client = _client;
+        fundingStatus = FundingStatus.Active;
+
         
         // Validate milestone amounts total
         uint256 totalMilestoneAmount = 0;
@@ -215,25 +181,6 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Check if the investment period has ended and if funding failed
-     * @return bool Whether funding failed
-     */
-    function checkFundingStatus() public view returns (bool) {
-    // If funding is already successful, return true
-    if (fundingSuccessful) {
-        return true;
-    }
-    
-    // If investment period has ended and target not reached, return false
-    if (block.timestamp > proposal.investmentPeriod && fundsRaised < proposal.targetAmount) {
-        return false;
-    }
-
-    // If funding period is still active, return false
-    return false;
-}
-
-    /**
      * @dev Pledge security tokens to the contract (done by general contractor)
      * @param amount Amount of security tokens to pledge
      */
@@ -241,35 +188,23 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
 
 // Pledge tokens function
     function pledgeTokens(uint256 amount) external {
-        // Ensure only the client can pledge tokens
         require(msg.sender == client, "Only the client can pledge tokens");
-
-        // Ensure the pledge amount is greater than zero
         require(amount > 0, "Pledge amount must be greater than zero");
-
-        // Step 1: Ensure the client has approved the contract to transfer tokens on their behalf
         require(securityToken.allowance(client, address(this)) >= amount, "Allowance too low");
 
-        // Step 2: Transfer SecurityTokens from client to the contract
         securityToken.safeTransferFrom(client, address(this), amount);
-
-        // Step 3: Mint equivalent EnergyTokens (this is done via the energyToken contract)
         energyToken.mint(address(this), amount);
-
-        // Step 4: Set pledge status to true
         tokensPledged = true;
 
-        // Emit the TokensPledged event
         emit TokensPledged(client, amount);
     }
 
-
-function invest(uint256 amount) external nonReentrant notStopped whenFundingActive returns (bool success) {
+function invest(uint256 amount) external nonReentrant notStopped returns (bool success) {
     // Validate investment amount and conditions
-    require(!fundingSuccessful, "INVEST: Funding already successful");
     require(amount > 0, "INVEST: Amount must be greater than zero");
     require(tokensPledged, "INVEST: Security tokens not pledged");
     require(block.timestamp <= proposal.investmentPeriod, "INVEST: Investment period has ended");
+    require(fundingStatus == FundingStatus.Active, "INVEST: Funding is not active");
 
     // Check if the target amount will be exceeded
     uint256 newTotalRaised = fundsRaised + amount;
@@ -290,9 +225,12 @@ function invest(uint256 amount) external nonReentrant notStopped whenFundingActi
     // Emit event for investment received
     emit InvestmentReceived(msg.sender, amount);
 
+    // After every investment, check if funding period has ended and update status if necessary
+    updateFundingStatus();
+
     // Check if the funding goal is reached and release energy tokens automatically
-    if (newTotalRaised >= proposal.targetAmount && !fundingSuccessful) {
-        fundingSuccessful = true;
+    if (newTotalRaised >= proposal.targetAmount) {
+        fundingStatus = FundingStatus.Successful;
         emit FundingSuccessful();
 
         // Automatically release energy tokens to all investors
@@ -302,13 +240,11 @@ function invest(uint256 amount) external nonReentrant notStopped whenFundingActi
     return true;
 }
 
-// Add this function to your CrowdFunding contract
-
 /**
  * @dev Internal function to release energy tokens when funding is successful
  */
 function _releaseEnergyTokens() internal {
-    require(fundingSuccessful, "Funding must be successful to release tokens");
+    require(fundingStatus == FundingStatus.Successful, "Funding must be successful to release tokens");
     require(!energyTokensReleased, "Energy tokens already released");
     
     // Mark tokens as released
@@ -318,12 +254,24 @@ function _releaseEnergyTokens() internal {
     emit EnergyTokensReleased();
 }
 
+
+function updateFundingStatus() internal {
+    // Check if the funding deadline has passed
+    if (block.timestamp >= proposal.investmentPeriod && fundingStatus == FundingStatus.Active) {
+        // If the target was not met, mark the funding as failed
+        if (fundsRaised < proposal.targetAmount) {
+            fundingStatus = FundingStatus.Failed;
+            emit FundingFailed();  // Emit event to signal that funding failed
+        }
+    }
+}
+
 /**
  * @dev Allow investors to claim their energy tokens
  * @return bool Success of the claim
  */
 function claimEnergyTokens() external nonReentrant returns (bool) {
-    require(fundingSuccessful, "Funding must be successful to claim tokens");
+    require(fundingStatus == FundingStatus.Successful, "Funding must be successful to claim tokens");
     require(energyTokensReleased, "Energy tokens not yet released");
     require(pendingEnergyTokens[msg.sender] > 0, "No energy tokens to claim");
     
@@ -334,47 +282,49 @@ function claimEnergyTokens() external nonReentrant returns (bool) {
     energyToken.transfer(msg.sender, amount);
     
     emit EnergyTokensClaimed(msg.sender, amount);
+    
     return true;
 }
 
-    /**
-     * @dev Claim refun if funding failed
-     */
-    function claimRefund() external nonReentrant {
-        // Check or update funding status
-        checkFundingStatus();
-        
-        require(fundingFailed, "Funding has not failed");
-        require(investorBalances[msg.sender] > 0, "No investment to refund");
-        require(!hasWithdrawnRefund[msg.sender], "Refund already claimed");
-        
-        uint256 amount = investorBalances[msg.sender];
-        hasWithdrawnRefund[msg.sender] = true;
-        
-        utilityToken.safeTransfer(msg.sender, amount);
-        emit RefundClaimed(msg.sender, amount);
-    }
+/**
+ * @dev Claim refund if funding failed
+ */
+function claimRefund() external nonReentrant {
+    // Check or update funding status    
+    require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
+    require(investorBalances[msg.sender] > 0, "No investment to refund");
+    require(!hasWithdrawnRefund[msg.sender], "Refund already claimed");
+    
+    uint256 amount = investorBalances[msg.sender];
+    hasWithdrawnRefund[msg.sender] = true;
+    
+    utilityToken.safeTransfer(msg.sender, amount);
+    emit RefundClaimed(msg.sender, amount);
+}
 
 
-
-
-    /**
-     * @dev Withdraw security tokens if funding failed
-     */
-    function withdrawSecurityTokens() external nonReentrant onlyGeneralContractor {
-        // Check or update funding status
-        checkFundingStatus();
-        
-        require(fundingFailed, "Funding has not failed");
-        require(tokensPledged, "No tokens pledged");
-        require(!securityTokensWithdrawn, "Security tokens already withdrawn");
-        
-        securityTokensWithdrawn = true;
-        
-        uint256 amount = securityToken.balanceOf(address(this));
-        securityToken.safeTransfer(generalContractor, amount);
-        emit SecurityTokensWithdrawn(generalContractor, amount);
-    }
+  /**
+ * @dev Withdraw security tokens if funding failed
+ */
+function withdrawSecurityTokens() external nonReentrant onlyClient {
+    // Check or update funding status
+    updateFundingStatus();  // Use the updated method to check funding status
+    
+    // Ensure that the funding has failed
+    require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
+    require(tokensPledged, "No tokens pledged");
+    require(!securityTokensWithdrawn, "Security tokens already withdrawn");
+    
+    // Mark the security tokens as withdrawn
+    securityTokensWithdrawn = true;
+    
+    // Transfer the security tokens back to the client
+    uint256 amount = securityToken.balanceOf(address(this));
+    securityToken.safeTransfer(client, amount);
+    
+    // Emit event for the withdrawal
+    emit SecurityTokensWithdrawn(client, amount);
+}
 
     // /**
     //  * @dev Sign agreement with a signature to prevent replay attacks

@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   31337: {
     CrowdFunding: {
-      address: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+      address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
       abi: [
         {
           inputs: [
@@ -438,19 +438,6 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "checkFundingStatus",
-          outputs: [
-            {
-              internalType: "bool",
-              name: "",
-              type: "bool",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
           name: "claimEnergyTokens",
           outputs: [
             {
@@ -582,25 +569,12 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "fundingFailed",
+          name: "fundingStatus",
           outputs: [
             {
-              internalType: "bool",
+              internalType: "enum CrowdFunding.FundingStatus",
               name: "",
-              type: "bool",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "fundingSuccessful",
-          outputs: [
-            {
-              internalType: "bool",
-              name: "",
-              type: "bool",
+              type: "uint8",
             },
           ],
           stateMutability: "view",
@@ -901,13 +875,6 @@ const deployedContracts = {
             },
           ],
           stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "withdrawSecurityTokens",
-          outputs: [],
-          stateMutability: "nonpayable",
           type: "function",
         },
       ],

@@ -26,7 +26,7 @@ const deployAll: DeployFunction = async function (hre: HardhatRuntimeEnvironment
 
   // Investment period (30 days from now)
   const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
-  const investmentPeriod = currentTime + 2592000; // 30 days in seconds
+  const investmentPeriod = currentTime + 60; //2592000; // 30 days in seconds
 
   // ------------------------
   // Get named accounts
