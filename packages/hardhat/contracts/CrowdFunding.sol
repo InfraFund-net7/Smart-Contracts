@@ -91,8 +91,9 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event AgreementSigned(address indexed generalContractor);
     event EnergyTokensReleased();
     event ExtraFundRequestCreated(uint256 indexed requestId, bytes32 proposalHash, uint256 amount, string description);
-    event ExtraFundRequestApproved(uint256 indexed requestId);
-    event VoteCast(uint256 indexed requestId, address indexed voter, bool support);
+    event ExtraFundRequestApproved(uint256 indexed requestId,uint256 indexed votingDuration);
+    event ExtraFundRequestRejected(uint256 indexed requestId);
+    event ExtraFundVoteCast(uint256 indexed requestId, address indexed voter, bool support, uint256 stake);
     event ExtraFundRequestExecuted(uint256 indexed requestId, bool approved);
     event RefundClaimed(address indexed investor, uint256 amount);
     event SecurityTokensWithdrawn(address indexed generalContractor, uint256 amount);
@@ -425,130 +426,158 @@ function requestExtraFunds(
         request.auditorApproved = true;
         request.votingEndTime = block.timestamp + votingDuration;
         
-        emit ExtraFundRequestApproved(requestId);
+        emit ExtraFundRequestApproved(requestId, votingDuration);
     }
 
 
-    // /**
-    //  * @dev Vote on an extra fund request
-    //  * @param requestId ID of the request to vote on
-    //  * @param support True to vote for, false to vote against
-    //  */
-    // function vote(uint256 requestId, bool support) external nonReentrant notStopped {
-    //     require(requestId < extraFundRequests.length, "Invalid request ID");
-    //     require(investorBalances[msg.sender] > 0, "Only investors can vote");
-    //     require(!hasVoted[requestId][msg.sender], "Already voted");
-        
-    //     ExtraFundRequest storage request = extraFundRequests[requestId];
-        
-    //     require(request.auditorApproved, "Request not approved by auditor");
-    //     require(block.timestamp < request.votingEndTime, "Voting period ended");
-    //     require(!request.executed, "Request already executed");
-        
-    //     hasVoted[requestId][msg.sender] = true;
-        
-    //     if (support) {
-    //         request.votesFor += investorBalances[msg.sender];
-    //     } else {
-    //         request.votesAgainst += investorBalances[msg.sender];
-    //     }
-        
-    //     emit VoteCast(requestId, msg.sender, support);
-    // }
+/**
+ * @dev Allows investors to vote on an extra fund request.
+ * @param requestId The ID of the extra fund request.
+ * @param support True to vote in favor, false to vote against.
+ */
+/**
+ * @dev Allows investors to vote on an extra fund request.
+ * @param requestId The ID of the extra fund request.
+ * @param support True to vote in favor, false to vote against.
+ */
+function voteOnExtraFundRequest(uint256 requestId, bool support) external nonReentrant notStopped {
+    require(requestId < extraFundRequests.length, "Invalid request ID");
 
-    // /**
-    //  * @dev Execute an approved extra fund request after voting period
-    //  * @param requestId ID of the request to execute
-    //  */
-    // function executeExtraFundRequest(uint256 requestId) external nonReentrant notStopped {
-    //     require(requestId < extraFundRequests.length, "Invalid request ID");
-        
-    //     ExtraFundRequest storage request = extraFundRequests[requestId];
-        
-    //     require(request.auditorApproved, "Request not approved by auditor");
-    //     require(block.timestamp >= request.votingEndTime, "Voting period not ended");
-    //     require(!request.executed, "Request already executed");
-        
-    //     request.executed = true;
-        
-    //     // Check if the request was approved by majority vote
-    //     bool approved = request.votesFor > request.votesAgainst;
-        
-    //     if (approved) {
-    //         // Transfer the requested amount to the general contractor
-    //         utilityToken.safeTransfer(generalContractor, request.amount);
-    //     }
-        
-    //     emit ExtraFundRequestExecuted(requestId, approved);
-    // }
+    uint256 voterBalance = investorBalances[msg.sender];
+    require(voterBalance > 0, "Only investors with stake can vote");
 
-    // /**
-    //  * @dev Get the total number of milestones
-    //  * @return uint256 Number of milestones
-    //  */
-    // function getMilestoneCount() external view returns (uint256) {
-    //     return milestones.length;
-    // }
+    ExtraFundRequest storage request = extraFundRequests[requestId];
 
-    // /**
-    //  * @dev Get milestone details
-    //  * @param milestoneIndex Index of the milestone
-    //  * @return amount Amount for the milestone
-    //  * @return verified Whether the milestone is verified
-    //  * @return fundsReleased Whether funds for the milestone have been released
-    //  */
-    // function getMilestoneDetails(uint256 milestoneIndex) external view returns (
-    //     uint256 amount,
-    //     bool verified,
-    //     bool fundsReleased
-    // ) {
-    //     require(milestoneIndex < milestones.length, "Invalid milestone index");
-    //     Milestone storage milestone = milestones[milestoneIndex];
-    //     return (milestone.amount, milestone.verified, milestone.fundsReleased);
-    // }
+    require(request.auditorApproved, "Request not approved by auditor");
+    require(request.votingEndTime > 0, "Voting period not started");
+    require(block.timestamp < request.votingEndTime, "Voting period ended");
+    require(!request.executed, "Request already executed");
+    require(!hasVoted[requestId][msg.sender], "Already voted");
 
-    // /**
-    //  * @dev Get the total number of extra fund requests
-    //  * @return uint256 Number of extra fund requests
-    //  */
-    // function getExtraFundRequestCount() external view returns (uint256) {
-    //     return extraFundRequests.length;
-    // }
+    // Mark voter as having voted
+    hasVoted[requestId][msg.sender] = true;
 
-    // /**
-    //  * @dev Get extra fund request details
-    //  * @param requestId ID of the request
-    //  * @return proposalHash Proposal hash
-    //  * @return amount Requested amount
-    //  * @return description Request description
-    //  * @return auditorApproved Whether auditor approved the request
-    //  * @return votingEndTime End time for voting
-    //  * @return votesFor Number of votes for
-    //  * @return votesAgainst Number of votes against
-    //  * @return executed Whether the request has been executed
-    //  */
-    // function getExtraFundRequestDetails(uint256 requestId) external view returns (
-    //     bytes32 proposalHash,
-    //     uint256 amount,
-    //     string memory description,
-    //     bool auditorApproved,
-    //     uint256 votingEndTime,
-    //     uint256 votesFor,
-    //     uint256 votesAgainst,
-    //     bool executed
-    // ) {
-    //     require(requestId < extraFundRequests.length, "Invalid request ID");
-    //     ExtraFundRequest storage request = extraFundRequests[requestId];
-        
-    //     return (
-    //         request.proposalHash,
-    //         request.amount,
-    //         request.description,
-    //         request.auditorApproved,
-    //         request.votingEndTime,
-    //         request.votesFor,
-    //         request.votesAgainst,
-    //         request.executed
-    //     );
-    // }
+    // Increase vote count based on stake
+    if (support) {
+        request.votesFor += voterBalance;
+    } else {
+        request.votesAgainst += voterBalance;
+    }
+
+    emit ExtraFundVoteCast(requestId, msg.sender, support, voterBalance);
+}
+
+
+function executeExtraFundRequest(uint256 requestId) external nonReentrant notStopped onlyAuditor {
+    require(requestId < extraFundRequests.length, "Invalid request ID");
+    
+    ExtraFundRequest storage request = extraFundRequests[requestId];
+    
+    // Ensure the request has been approved by the auditor
+    require(request.auditorApproved, "Request not approved by auditor");
+
+    // Ensure the voting period has ended
+    require(block.timestamp >= request.votingEndTime, "Voting period not ended");
+
+    // Ensure the request hasn't been executed already
+    require(!request.executed, "Request already executed");
+
+    // Define the minimum quorum threshold (for example, 60% of the total votes)
+    uint256 totalVotes = request.votesFor + request.votesAgainst;
+    uint256 quorum = (totalVotes * 60) / 100; // 60% quorum**********************************Ask Iman
+
+    // Ensure quorum has been met (i.e., enough votes were cast)
+    require(totalVotes >= quorum, "Quorum not met");
+
+    // Check if the request was approved by majority vote
+    bool approved = request.votesFor > request.votesAgainst;
+
+    // If the request is approved, transfer the funds to the contractor
+    if (approved) {
+        request.executed = true;
+        utilityToken.safeTransfer(generalContractor, request.amount);
+        emit ExtraFundRequestExecuted(requestId, approved);
+    } else {
+        // If the request is rejected, emit a rejection event
+        emit ExtraFundRequestRejected(requestId);
+    }
+}
+
+//__________________________________________________________________________________________________________________
+/**
+ * @dev Get the total number of milestones in the contract
+ * @return uint256 Total number of milestones
+ */
+function getMilestoneCount() external view returns (uint256) {
+    return milestones.length;
+}
+
+/**
+ * @dev Get details of a specific milestone
+ * @param milestoneIndex The index of the milestone
+ * @return amount The amount allocated for the milestone
+ * @return verified Whether the milestone has been verified
+ * @return fundsReleased Whether the funds for the milestone have been released
+ */
+function getMilestoneDetails(uint256 milestoneIndex) external view returns (
+    uint256 amount,
+    bool verified,
+    bool fundsReleased
+) {
+    require(milestoneIndex < milestones.length, "Invalid milestone index");
+
+    Milestone storage milestone = milestones[milestoneIndex];
+    return (
+        milestone.amount,
+        milestone.verified,
+        milestone.fundsReleased
+    );
+}
+
+/**
+ * @dev Get the total number of extra fund requests made
+ * @return uint256 Total number of extra fund requests
+ */
+function getExtraFundRequestCount() external view returns (uint256) {
+    return extraFundRequests.length;
+}
+
+/**
+ * @dev Get the details of a specific extra fund request
+ * @param requestId The ID of the extra fund request
+ * @return proposalHash The hash of the proposal associated with the request
+ * @return amount The requested amount for the extra fund
+ * @return description A brief description of the extra fund request
+ * @return auditorApproved Whether the request has been approved by the auditor
+ * @return votingEndTime The timestamp when the voting period ends
+ * @return votesFor The total number of votes in favor of the request
+ * @return votesAgainst The total number of votes against the request
+ * @return executed Whether the request has been executed (funds transferred)
+ */
+function getExtraFundRequestDetails(uint256 requestId) external view returns (
+    bytes32 proposalHash,
+    uint256 amount,
+    string memory description,
+    bool auditorApproved,
+    uint256 votingEndTime,
+    uint256 votesFor,
+    uint256 votesAgainst,
+    bool executed
+) {
+    require(requestId < extraFundRequests.length, "Invalid request ID");
+
+    ExtraFundRequest storage request = extraFundRequests[requestId];
+
+    return (
+        request.proposalHash,
+        request.amount,
+        request.description,
+        request.auditorApproved,
+        request.votingEndTime,
+        request.votesFor,
+        request.votesAgainst,
+        request.executed
+    );
+}
+
 }
