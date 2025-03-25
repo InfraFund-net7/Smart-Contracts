@@ -55,6 +55,10 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
 
     // State variables
     Proposal public proposal;
+    uint256 public constant MAX_VOTING_PERIOD = 7 days;//CheckWithIman*****************
+    uint256 public constant MAX_DESCRIPTION_LENGTH = 256; // Limit to 256 characters
+
+
     Milestone[] public milestones;
     ExtraFundRequest[] public extraFundRequests;
     
@@ -86,7 +90,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event EmergencyToggled(bool stopped);
     event AgreementSigned(address indexed generalContractor);
     event EnergyTokensReleased();
-    event ExtraFundRequestCreated(uint256 indexed requestId, bytes32 proposalHash, uint256 amount);
+    event ExtraFundRequestCreated(uint256 indexed requestId, bytes32 proposalHash, uint256 amount, string description);
     event ExtraFundRequestApproved(uint256 indexed requestId);
     event VoteCast(uint256 indexed requestId, address indexed voter, bool support);
     event ExtraFundRequestExecuted(uint256 indexed requestId, bool approved);
@@ -343,79 +347,87 @@ function verifyMilestone(uint256 milestoneIndex) external nonReentrant notStoppe
     require(fundingStatus == FundingStatus.Successful, "Funding must be successful first");
     require(gcAgreement, "General contractor must sign agreement first");
     require(milestoneIndex < milestones.length, "Invalid milestone index");
-    require(!milestones[milestoneIndex].verified, "Milestone already verified");
     
+    // Check if the milestone is already verified before doing any state changes
+    if (milestones[milestoneIndex].verified) {
+        revert("Milestone already verified");
+    }
+
     milestones[milestoneIndex].verified = true;
     emit MilestoneVerified(milestoneIndex);
 }
 
     /**
-     * @dev Withdraw funds for completed milestone
-     * @param milestoneIndex Index of the verified milestone
+ * @dev Withdraw funds for completed milestone
+ * @param milestoneIndex Index of the verified milestone
+ */
+function withdrawByGC(uint256 milestoneIndex) external nonReentrant notStopped onlyGeneralContractor {
+    require(milestoneIndex < milestones.length, "Invalid milestone index");
+    require(milestones[milestoneIndex].verified, "Milestone not verified");
+    require(!milestones[milestoneIndex].fundsReleased, "Funds already released");
+
+    uint256 amount = milestones[milestoneIndex].amount;
+    
+    // Ensure that the amount is greater than zero before attempting a transfer
+    require(amount > 0, "Amount must be greater than zero");
+
+    // Update state before transfer to ensure safety
+    milestones[milestoneIndex].fundsReleased = true;
+    
+    // Transfer funds
+    utilityToken.safeTransfer(generalContractor, amount);
+    
+    // Emit event after successful transfer
+    emit FundsWithdrawn(milestoneIndex, amount);
+}
+
+function requestExtraFunds(
+    bytes32 proposalHash, 
+    uint256 amount, 
+    string calldata description
+) external nonReentrant notStopped onlyGeneralContractor {
+    require(fundingStatus == FundingStatus.Successful, "Funding must be successful first");
+    require(gcAgreement, "General contractor must sign agreement first");
+    require(amount > 0, "Amount must be greater than zero");
+    require(bytes(description).length <= MAX_DESCRIPTION_LENGTH, "Description too long");
+
+    uint256 requestId = extraFundRequests.length;
+
+    extraFundRequests.push(ExtraFundRequest({
+        proposalHash: proposalHash,
+        amount: amount,
+        description: description,
+        createdAt: block.timestamp,
+        auditorApproved: false,
+        votingEndTime: 0,
+        votesFor: 0,
+        votesAgainst: 0,
+        executed: false
+    }));
+
+    emit ExtraFundRequestCreated(requestId, proposalHash, amount, description);
+}
+
+    /**
+     * @dev Approve extra fund request and open it for voting
+     * @param requestId ID of the extra fund request
+     * @param votingDuration Duration for the voting period
      */
-    function withdrawByGC(uint256 milestoneIndex) external nonReentrant notStopped onlyGeneralContractor {
-        require(milestoneIndex < milestones.length, "Invalid milestone index");
-        require(milestones[milestoneIndex].verified, "Milestone not verified");
-        require(!milestones[milestoneIndex].fundsReleased, "Funds already released");
+    function approveExtraFundRequest(uint256 requestId, uint256 votingDuration) external nonReentrant notStopped onlyAuditor {
+        require(requestId < extraFundRequests.length, "Invalid request ID");
+        require(votingDuration <= MAX_VOTING_PERIOD, "Voting period too long");
         
-        // Update state before transfer
-        milestones[milestoneIndex].fundsReleased = true;
+        ExtraFundRequest storage request = extraFundRequests[requestId];
         
-        uint256 amount = milestones[milestoneIndex].amount;
-        utilityToken.safeTransfer(generalContractor, amount);
+        require(!request.auditorApproved, "Request already approved");
+        require(!request.executed, "Request already executed");
         
-        emit FundsWithdrawn(milestoneIndex, amount);
+        request.auditorApproved = true;
+        request.votingEndTime = block.timestamp + votingDuration;
+        
+        emit ExtraFundRequestApproved(requestId);
     }
 
-    // /**
-    //  * @dev Request extra funds with a proposal
-    //  * @param proposalHash Hash of the detailed proposal
-    //  * @param amount Amount of additional funds requested
-    //  * @param description Brief description of the request
-    //  */
-    // function requestExtraFunds(
-    //     bytes32 proposalHash, 
-    //     uint256 amount, 
-    //     string calldata description
-    // ) external nonReentrant notStopped onlyGeneralContractor {
-    //     require(fundingSuccessful, "Funding must be successful first");
-    //     require(gcAgreement, "General contractor must sign agreement first");
-    //     require(amount > 0, "Amount must be greater than zero");
-        
-    //     uint256 requestId = extraFundRequests.length;
-        
-    //     extraFundRequests.push(ExtraFundRequest({
-    //         proposalHash: proposalHash,
-    //         amount: amount,
-    //         description: description,
-    //         createdAt: block.timestamp,
-    //         auditorApproved: false,
-    //         votingEndTime: 0,
-    //         votesFor: 0,
-    //         votesAgainst: 0,
-    //         executed: false
-    //     }));
-        
-    //     emit ExtraFundRequestCreated(requestId, proposalHash, amount);
-    // }
-
-    // /**
-    //  * @dev Approve extra fund request and open it for voting
-    //  * @param requestId ID of the extra fund request
-    //  */
-    // function approveExtraFundRequest(uint256 requestId) external nonReentrant notStopped onlyAuditor {
-    //     require(requestId < extraFundRequests.length, "Invalid request ID");
-        
-    //     ExtraFundRequest storage request = extraFundRequests[requestId];
-        
-    //     require(!request.auditorApproved, "Request already approved");
-    //     require(!request.executed, "Request already executed");
-        
-    //     request.auditorApproved = true;
-    //     request.votingEndTime = block.timestamp + VOTING_PERIOD;
-        
-    //     emit ExtraFundRequestApproved(requestId);
-    // }
 
     // /**
     //  * @dev Vote on an extra fund request
