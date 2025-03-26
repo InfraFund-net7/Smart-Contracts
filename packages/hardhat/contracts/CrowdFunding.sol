@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+//SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -57,6 +57,8 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     Proposal public proposal;
     uint256 public constant MAX_VOTING_PERIOD = 7 days;//CheckWithIman*****************
     uint256 public constant MAX_DESCRIPTION_LENGTH = 256; // Limit to 256 characters
+    bool public isFinalMilestoneAchieved;
+
 
 
     Milestone[] public milestones;
@@ -98,6 +100,9 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event RefundClaimed(address indexed investor, uint256 amount);
     event SecurityTokensWithdrawn(address indexed generalContractor, uint256 amount);
     event EnergyTokensClaimed(address indexed investor, uint256 amount);
+    event FinalMilestoneAchieved();
+    event EnergyCreditsVerified(address investor, uint creditsEarned);
+
 
     modifier notStopped() {
         require(!emergencyStop, "Contract is in emergency stop");
@@ -356,6 +361,17 @@ function verifyMilestone(uint256 milestoneIndex) external nonReentrant notStoppe
 
     milestones[milestoneIndex].verified = true;
     emit MilestoneVerified(milestoneIndex);
+
+    // Check if the milestone is the last one
+    if (milestoneIndex == milestones.length - 1) {
+        isFinalMilestoneAchieved = true;  // Mark final milestone as achieved
+        emit FinalMilestoneAchieved();   // Emit event to notify that the final milestone is achieved
+
+        // Trigger any additional logic such as notifying investors or triggering the token redemption process
+        // For example, you can call functions to allow investors to burn tokens or redeem credits here.
+    }
+    
+
 }
 
     /**
@@ -472,24 +488,15 @@ function executeExtraFundRequest(uint256 requestId) external nonReentrant notSto
     require(requestId < extraFundRequests.length, "Invalid request ID");
     
     ExtraFundRequest storage request = extraFundRequests[requestId];
-    
-    // Ensure the request has been approved by the auditor
     require(request.auditorApproved, "Request not approved by auditor");
-
-    // Ensure the voting period has ended
     require(block.timestamp >= request.votingEndTime, "Voting period not ended");
-
-    // Ensure the request hasn't been executed already
     require(!request.executed, "Request already executed");
 
-    // Define the minimum quorum threshold (for example, 60% of the total votes)
     uint256 totalVotes = request.votesFor + request.votesAgainst;
     uint256 quorum = (totalVotes * 60) / 100; // 60% quorum**********************************Ask Iman
 
-    // Ensure quorum has been met (i.e., enough votes were cast)
     require(totalVotes >= quorum, "Quorum not met");
 
-    // Check if the request was approved by majority vote
     bool approved = request.votesFor > request.votesAgainst;
 
     // If the request is approved, transfer the funds to the contractor
@@ -502,6 +509,131 @@ function executeExtraFundRequest(uint256 requestId) external nonReentrant notSto
         emit ExtraFundRequestRejected(requestId);
     }
 }
+
+
+// Mapping to track individual investor energy credit redemptions
+mapping(address => EnergyCreditRedemption) public energyCreditRedemptions;
+
+// Events for final milestone and energy credit processes
+event EnergyTokensBurned(address indexed investor, uint256 amount);
+event EnergyCreditsClaimed(address indexed investor, uint256 credits);
+
+// Flag to track final milestone completion
+bool public finalMilestoneAchieved;
+
+// Track total burned tokens to prevent over-redemption
+uint256 public totalTokensBurned;
+
+// Energy credit conversion rate (settable by admin or oracle)
+uint256 public energyCreditRate = 1; // Default 1:1 conversion
+
+// External energy provider verification
+address public energyProvider;
+
+// Time limit for claiming energy credits after final milestone
+uint256 public creditClaimDeadline;
+uint256 public constant CLAIM_PERIOD = 30 days;
+modifier onlyInvestor(address investor) {
+    require(msg.sender == investor, "Not authorized");
+    _;
+}
+
+
+/**
+ * @dev Mark the final milestone as achieved and trigger investor notifications
+ */
+function completeFinalMilestone() external nonReentrant notStopped onlyAuditor {
+    require(!finalMilestoneAchieved, "Final milestone already completed");
+    require(milestones.length > 0, "No milestones exist");
+    require(milestones[milestones.length - 1].verified, "Final milestone not verified");
+    
+    finalMilestoneAchieved = true;
+    creditClaimDeadline = block.timestamp + CLAIM_PERIOD;
+    emit FinalMilestoneAchieved();
+}
+
+// New struct to track the verification process
+struct EnergyCreditRedemption {
+    uint256 tokensBurned;
+    uint256 creditsEarned;
+    bool redeemed;
+    bool verifiedByProvider;  // Track whether the energy provider has verified the redemption
+}
+
+
+// Set energy provider (owner can change it)
+function setEnergyProvider(address provider) external onlyOwner {
+    energyProvider = provider;
+}
+
+// Verify energy credit redemption
+function verifyEnergyCreditRedemption(address investor) external {
+    require(msg.sender == energyProvider, "Only energy provider can verify claims");
+    
+    EnergyCreditRedemption storage redemption = energyCreditRedemptions[investor];
+    require(redemption.creditsEarned > 0, "No credits earned to verify");
+    require(!redemption.verifiedByProvider, "Credits already verified");
+
+    // Mark the redemption as verified by the provider
+    redemption.verifiedByProvider = true;
+
+    emit EnergyCreditsVerified(investor, redemption.creditsEarned);  // Emit an event to log verification
+}
+
+// The burn and claim function
+function burnAndClaimEnergyCredits(uint256 amount) external nonReentrant {
+    require(finalMilestoneAchieved, "Final milestone not yet achieved");
+    require(amount > 0, "Burn amount must be greater than zero");
+    require(energyToken.balanceOf(msg.sender) >= amount, "Insufficient energy tokens");
+    require(energyToken.allowance(msg.sender, address(this)) >= amount, "Token allowance too low");
+
+    // Calculate energy credits based on conversion rate
+    uint256 energyCredits = amount * energyCreditRate;
+
+    // Burn tokens
+    energyToken.burnFrom(msg.sender, amount);
+
+    // Track redemption
+    energyCreditRedemptions[msg.sender] = EnergyCreditRedemption({
+        tokensBurned: amount,
+        creditsEarned: energyCredits,
+        redeemed: false,  // Not redeemed yet
+        verifiedByProvider: false  // Initially not verified
+    });
+
+    totalTokensBurned += amount;
+    emit EnergyTokensBurned(msg.sender, amount);
+
+    // Trigger the event for claiming credits (before verification)
+    emit EnergyCreditsClaimed(msg.sender, energyCredits);
+}
+
+
+/**
+ * @dev Get energy credit redemption details for an investor
+ * @param investor Address of the investor
+ * @return tokensBurned Amount of tokens burned
+ * @return creditsEarned Number of energy credits earned
+ * @return redeemed Whether credits have been redeemed
+ * @return verified Whether credits have been verified by the energy provider
+ */
+function getEnergyCreditRedemptionDetails(address investor) external view onlyInvestor(investor) returns (
+    uint256 tokensBurned,
+    uint256 creditsEarned,
+    bool redeemed,
+    bool verified
+) {
+    EnergyCreditRedemption storage redemption = energyCreditRedemptions[investor];
+    return (
+        redemption.tokensBurned,
+        redemption.creditsEarned,
+        redemption.redeemed,
+        redemption.verifiedByProvider  // Return the verification status as well
+    );
+}
+
+
+
 
 //__________________________________________________________________________________________________________________
 /**

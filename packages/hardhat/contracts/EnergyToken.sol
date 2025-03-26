@@ -30,4 +30,14 @@ contract EnergyToken is ERC20 {
     function mint(address to, uint256 amount) external onlyCrowdFunding {
         _mint(to, amount);
     }
+
+    function burnFrom(address account, uint256 amount) external {
+    require(account != address(0), "Invalid address");
+    require(balanceOf(account) >= amount, "Insufficient balance");
+    require(allowance(account, msg.sender) >= amount, "Allowance too low");
+
+    _approve(account, msg.sender, allowance(account, msg.sender) - amount);
+    _burn(account, amount);
+}
+
 }
