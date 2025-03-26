@@ -1,4 +1,4 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,7 +12,7 @@ import "./IEnergyToken.sol";
 /**
  * @title CrowdFunding
  * @dev A contract for managing CrowdFunding for infrastructure projects with milestone-based releases
- * and DAO voting for extra fund requests
+ * and DAO voting for extra fund requests.
  */
 contract CrowdFunding is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -45,42 +45,56 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         bool executed;
     }
 
+    struct EnergyCreditRedemptions {
+        uint256 tokensBurned;
+    uint256 creditsEarned;
+    bool redeemed;
+    bool verifiedByProvider;
+    }
+
     // Immutable state variables
-    address public immutable auditor;
-    address public immutable generalContractor;
-    address public immutable client;
-    IERC20 public immutable securityToken;
-    IERC20 public immutable utilityToken;
+    address public  auditor;
+    address public  generalContractor;
+    address public  client;
+    IERC20 public  securityToken;
+    IERC20 public  utilityToken;
     IEnergyToken public energyToken;
 
     // State variables
     Proposal public proposal;
-    uint256 public constant MAX_VOTING_PERIOD = 7 days;//CheckWithIman*****************
+    uint256 public constant MAX_VOTING_PERIOD = 7 days;
     uint256 public constant MAX_DESCRIPTION_LENGTH = 256; // Limit to 256 characters
     bool public isFinalMilestoneAchieved;
-
+    bool public finalMilestoneAchieved;
+    uint256 public totalTokensBurned;
+    uint256 public energyCreditRate = 1; // Default 1:1 conversion
+    address public energyProvider;
+    uint256 public creditClaimDeadline;
+    uint256 public CLAIM_PERIOD;
 
 
     Milestone[] public milestones;
     ExtraFundRequest[] public extraFundRequests;
-    
+
     mapping(address => uint256) public investorBalances;
     mapping(address => uint256) public pendingEnergyTokens;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
     mapping(address => bool) public hasWithdrawnRefund;
-    
+
+    mapping(address => EnergyCreditRedemptions) public energyCreditRedemptions;
+
     uint256 public fundsRaised;
     uint256 public constant VOTING_PERIOD = 7 days;
-    
+
     // Status flags
     bool public tokensPledged;
     bool public securityTokensWithdrawn;
     bool public gcAgreement;
     bool public emergencyStop;
     bool public energyTokensReleased;
-    
+
     // Domain separator for signatures
-    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public DOMAIN_SEPARATOR;
 
     // Events
     event InvestmentReceived(address indexed investor, uint256 amount);
@@ -102,7 +116,8 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event EnergyTokensClaimed(address indexed investor, uint256 amount);
     event FinalMilestoneAchieved();
     event EnergyCreditsVerified(address investor, uint creditsEarned);
-
+    event EnergyTokensBurned(address indexed investor, uint256 amount);
+    event EnergyCreditsClaimed(address indexed investor, uint256 credits);
 
     modifier notStopped() {
         require(!emergencyStop, "Contract is in emergency stop");
@@ -124,7 +139,28 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         _;
     }
 
-    constructor(
+    modifier onlyInvestor(address investor) {
+        require(msg.sender == investor, "Not authorized");
+        _;
+    }
+
+    constructor() Ownable(msg.sender) {
+        // We will handle all initialization in the `initialize` function
+        auditor = address(0);
+        generalContractor = address(0);
+        client = address(0);
+        securityToken = IERC20(address(0));
+        utilityToken = IERC20(address(0));
+        energyToken = IEnergyToken(address(0));
+        fundingStatus = FundingStatus.Active;
+        DOMAIN_SEPARATOR = bytes32(0);
+    }
+
+    /**
+     * @dev Initializes the contract with the required parameters.
+     * This function should be called once after deployment.
+     */
+    function initialize(
         address _securityToken,
         address _utilityToken,
         address _energyToken,
@@ -134,7 +170,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         address _generalContractor,
         address _client,
         uint256[] memory _milestoneAmounts
-    ) Ownable(msg.sender) {
+    ) public onlyOwner {
         require(_securityToken != address(0), "Security token cannot be zero address");
         require(_utilityToken != address(0), "Utility token cannot be zero address");
         require(_energyToken != address(0), "Energy token cannot be zero address");
@@ -154,7 +190,6 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         client = _client;
         fundingStatus = FundingStatus.Active;
 
-        
         // Validate milestone amounts total
         uint256 totalMilestoneAmount = 0;
         for (uint256 i = 0; i < _milestoneAmounts.length; i++) {
@@ -167,7 +202,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
             }));
         }
         require(totalMilestoneAmount == _targetAmount, "Milestone amounts must sum to target amount");
-        
+
         // Create domain separator for signatures
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
@@ -179,6 +214,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
             )
         );
     }
+
 
     /**
      * @dev Toggle the emergency stop state
@@ -510,35 +546,6 @@ function executeExtraFundRequest(uint256 requestId) external nonReentrant notSto
     }
 }
 
-
-// Mapping to track individual investor energy credit redemptions
-mapping(address => EnergyCreditRedemption) public energyCreditRedemptions;
-
-// Events for final milestone and energy credit processes
-event EnergyTokensBurned(address indexed investor, uint256 amount);
-event EnergyCreditsClaimed(address indexed investor, uint256 credits);
-
-// Flag to track final milestone completion
-bool public finalMilestoneAchieved;
-
-// Track total burned tokens to prevent over-redemption
-uint256 public totalTokensBurned;
-
-// Energy credit conversion rate (settable by admin or oracle)
-uint256 public energyCreditRate = 1; // Default 1:1 conversion
-
-// External energy provider verification
-address public energyProvider;
-
-// Time limit for claiming energy credits after final milestone
-uint256 public creditClaimDeadline;
-uint256 public constant CLAIM_PERIOD = 30 days;
-modifier onlyInvestor(address investor) {
-    require(msg.sender == investor, "Not authorized");
-    _;
-}
-
-
 /**
  * @dev Mark the final milestone as achieved and trigger investor notifications
  */
@@ -552,14 +559,6 @@ function completeFinalMilestone() external nonReentrant notStopped onlyAuditor {
     emit FinalMilestoneAchieved();
 }
 
-// New struct to track the verification process
-struct EnergyCreditRedemption {
-    uint256 tokensBurned;
-    uint256 creditsEarned;
-    bool redeemed;
-    bool verifiedByProvider;  // Track whether the energy provider has verified the redemption
-}
-
 
 // Set energy provider (owner can change it)
 function setEnergyProvider(address provider) external onlyOwner {
@@ -570,7 +569,7 @@ function setEnergyProvider(address provider) external onlyOwner {
 function verifyEnergyCreditRedemption(address investor) external {
     require(msg.sender == energyProvider, "Only energy provider can verify claims");
     
-    EnergyCreditRedemption storage redemption = energyCreditRedemptions[investor];
+    EnergyCreditRedemptions storage redemption = energyCreditRedemptions[investor];
     require(redemption.creditsEarned > 0, "No credits earned to verify");
     require(!redemption.verifiedByProvider, "Credits already verified");
 
@@ -594,7 +593,7 @@ function burnAndClaimEnergyCredits(uint256 amount) external nonReentrant {
     energyToken.burnFrom(msg.sender, amount);
 
     // Track redemption
-    energyCreditRedemptions[msg.sender] = EnergyCreditRedemption({
+    energyCreditRedemptions[msg.sender] = EnergyCreditRedemptions({
         tokensBurned: amount,
         creditsEarned: energyCredits,
         redeemed: false,  // Not redeemed yet
@@ -623,7 +622,7 @@ function getEnergyCreditRedemptionDetails(address investor) external view onlyIn
     bool redeemed,
     bool verified
 ) {
-    EnergyCreditRedemption storage redemption = energyCreditRedemptions[investor];
+    EnergyCreditRedemptions storage redemption = energyCreditRedemptions[investor];
     return (
         redemption.tokensBurned,
         redemption.creditsEarned,
