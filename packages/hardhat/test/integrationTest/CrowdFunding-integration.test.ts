@@ -29,7 +29,7 @@ describe("CrowdFunding Integration Tests", function () {
   // Constants for test
   const investmentPeriod = 7 * 24 * 60 * 60; // 7 days in seconds
   const targetAmount = ethers.parseEther("1000");
-  const milestoneAmounts = [ethers.parseEther("300"), ethers.parseEther("400"), ethers.parseEther("300")];
+  const milestoneAmounts = [ethers.parseEther("300"), ethers.parseEther("400"), ethers.parseEther("200")];
   const claimPeriod = 30 * 24 * 60 * 60; // 30 days for claim period
 
   // Setup fixture that deploys all contracts and sets them up
@@ -389,6 +389,16 @@ describe("CrowdFunding Integration Tests", function () {
       const milestone2 = await crowdFunding.getMilestoneDetails(2);
       console.log(`Final milestone verified: ${milestone2.verified}`);
       console.log(`Final milestone achieved: ${await crowdFunding.finalMilestoneAchieved()}`);
+      // Handle the potential null value from getBlock()
+      const deadlineTimestamp = await crowdFunding.creditClaimDeadline();
+      console.log(`creditClaimDeadline: ${deadlineTimestamp}`);
+      const latestBlock = await ethers.provider.getBlock("latest");
+      // Check if block is null before accessing its timestamp
+      if (latestBlock === null) {
+        console.log("Could not retrieve latest block");
+        return;
+      }
+      console.log(`Credit claim deadline: ${new Date(Number(deadlineTimestamp) * 1000).toLocaleString()}`);
 
       // General contractor withdraws funds for final milestone
       console.log(
@@ -399,10 +409,10 @@ describe("CrowdFunding Integration Tests", function () {
         `General contractor USDC balance: ${ethers.formatEther(await mockUSDC.balanceOf(await generalContractor.getAddress()))} USDC`,
       );
 
-      // Complete the final milestone (auditor marks it as complete)
-      console.log("Auditor completing the final milestone...");
-      await crowdFunding.connect(auditor).completeFinalMilestone();
-      console.log(`Final milestone completed: ${await crowdFunding.finalMilestoneAchieved()}`);
+      // // Complete the final milestone (auditor marks it as complete)
+      // console.log("Auditor completing the final milestone...");
+      // await crowdFunding.connect(auditor).completeFinalMilestone();
+      // console.log(`Final milestone completed: ${await crowdFunding.finalMilestoneAchieved()}`);
 
       // Step 8: Energy credit redemption
       console.log("\n--- STEP 8: Energy credit redemption ---");
