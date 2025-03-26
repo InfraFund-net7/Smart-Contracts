@@ -8,22 +8,18 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "@nomicfoundation/hardhat-verify";
 import "hardhat-deploy";
-import "hardhat-deploy-ethers";
 import { task } from "hardhat/config";
 import generateTsAbis from "./scripts/generateTsAbis";
 
-// If not set, it uses ours Alchemy's default API key.
-// You can get your own at https://dashboard.alchemyapi.io
+// API Keys
 const providerApiKey = process.env.ALCHEMY_API_KEY || "oKxs-03sij-U_N0iOlrSsZFr29-IqbuF";
-// If not set, it uses the hardhat account 0 private key.
-// You can generate a random account with `yarn generate` or `yarn account:import` to import your existing PK
-const deployerPrivateKey =
-  process.env.__RUNTIME_DEPLOYER_PRIVATE_KEY ?? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; //"0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82"; // "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"//""; //"0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82"//"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";//;// ////"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"////"0x47c99abed3324a2707c28affff1267e45918ec8c3f20b8aa892e8b065d2942dd"//
-
-// If not set, it uses our block explorers default API keys.
 const etherscanApiKey = process.env.ETHERSCAN_MAINNET_API_KEY || "DNXJA8RX2Q3VZ4URQIWP7Z68CJXQZSC6AW";
 const etherscanOptimisticApiKey = process.env.ETHERSCAN_OPTIMISTIC_API_KEY || "RM62RDISS1RH448ZY379NX625ASG1N633R";
 const basescanApiKey = process.env.BASESCAN_API_KEY || "ZZZEIPMT1MNJ8526VV2Y744CA7TNZR64G6";
+
+// Private keys from environment
+const deployerPrivateKey =
+  process.env.DEPLOYER_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Default hardhat account #0
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -33,7 +29,6 @@ const config: HardhatUserConfig = {
         settings: {
           optimizer: {
             enabled: true,
-            // https://docs.soliditylang.org/en/latest/using-the-compiler.html#optimizer-options
             runs: 200,
           },
         },
@@ -41,24 +36,50 @@ const config: HardhatUserConfig = {
     ],
   },
   defaultNetwork: "localhost",
+
+  // Updated named accounts to match our deploy script structure
   namedAccounts: {
-    adminSigner: 0, // First signer will be the admin
-    auditorSigner: 1, // Second signer will be the auditor
-    clientSigner: 2, // Third signer will be the client
-    generalContractorSigner: 3, // Fourth signer will be the general contractor
-    investorSigner1: 4, // Fifth signer will be investor 1
-    investorSigner2: 5, // Sixth signer will be investor 2
-    investorSigner3: 6, // Seventh signer will be investor 3
+    deployer: {
+      default: 0, // First signer
+    },
+    auditor: {
+      default: 1, // Second signer
+    },
+    generalContractor: {
+      default: 2, // Third signer
+    },
+    client: {
+      default: 3, // Fourth signer
+    },
+    investor1: {
+      default: 4, // Fifth signer
+    },
+    investor2: {
+      default: 5, // Sixth signer
+    },
+    investor3: {
+      default: 6, // Seventh signer
+    },
   },
 
   networks: {
     // View the networks that are pre-configured.
-    // If the network you are looking for is not here you can add new network settings
     hardhat: {
       forking: {
         url: `https://eth-mainnet.alchemyapi.io/v2/${providerApiKey}`,
         enabled: process.env.MAINNET_FORKING_ENABLED === "true",
       },
+      // Important: This ensures the right accounts are created in Hardhat's local network
+      accounts: {
+        count: 10,
+        mnemonic: "test test test test test test test test test test test junk",
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: 31337,
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545/",
+      chainId: 31337,
     },
     mainnet: {
       url: `https://eth-mainnet.alchemyapi.io/v2/${providerApiKey}`,
@@ -165,7 +186,7 @@ const config: HardhatUserConfig = {
       accounts: [deployerPrivateKey],
     },
   },
-  // configuration for harhdat-verify plugin
+  // configuration for hardhat-verify plugin
   etherscan: {
     apiKey: `${etherscanApiKey}`,
   },
@@ -177,6 +198,12 @@ const config: HardhatUserConfig = {
   },
   sourcify: {
     enabled: false,
+  },
+  gasReporter: {
+    enabled: process.env.REPORT_GAS !== undefined,
+    currency: "USD",
+    outputFile: "gas-report.txt",
+    noColors: true,
   },
 };
 

@@ -1,7 +1,7 @@
 // import { expect } from "chai";
 // import { ethers } from "hardhat";
 // import { time } from "@nomicfoundation/hardhat-network-helpers";
-// import { CrowdFunding, SecurityToken, EnergyToken, UtilityToken } from "../typechain-types";
+// import { CrowdFunding, SecurityToken, EnergyToken, UtilityToken } from "../../typechain-types";
 // import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 // describe("CrowdFunding", function () {
