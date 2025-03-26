@@ -558,19 +558,6 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         }
     }
 
-    // /**
-    //  * @dev Mark the final milestone as achieved and trigger investor notifications
-    //  */
-    // function completeFinalMilestone() external nonReentrant notStopped onlyAuditor {
-    //     require(!finalMilestoneAchieved, "Final milestone already completed");
-    //     require(milestones.length > 0, "No milestones exist");
-    //     require(milestones[milestones.length - 1].verified, "Final milestone not verified");
-        
-    //     finalMilestoneAchieved = true;
-    //     creditClaimDeadline = block.timestamp + CLAIM_PERIOD;
-    //     emit FinalMilestoneAchieved();
-    // }
-
     /**
      * @dev Verify energy credit redemption
      * @param investor Address of the investor
