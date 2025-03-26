@@ -223,6 +223,7 @@ describe("CrowdFunding Integration Tests", function () {
       );
 
       // Step 4: General contractor signs agreement
+      // Step 4: General contractor signs agreement
       console.log("\n--- STEP 4: General contractor signs agreement ---");
 
       const agreementHash = ethers.keccak256(ethers.toUtf8Bytes("Agreement terms"));
@@ -240,14 +241,56 @@ describe("CrowdFunding Integration Tests", function () {
       );
       console.log(`Message hash: ${messageHash}`);
 
+      // Create the EIP-712 digest
       const digest = ethers.keccak256(ethers.concat([ethers.toUtf8Bytes("\x19\x01"), domainSeparator, messageHash]));
       console.log(`Digest to sign: ${digest}`);
 
-      const signature = await generalContractor.signMessage(ethers.getBytes(digest));
-      console.log(`Signature: ${signature}`);
+      // SIMPLEST SOLUTION FOR HARDHAT:
+      // In Hardhat tests, we can use a known private key for the generalContractor signer
+
+      // The private keys for default Hardhat accounts (DO NOT USE THESE IN PRODUCTION!)
+      const HARDHAT_PRIVATE_KEYS = [
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // account #0
+        "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // account #1
+        "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // account #2
+        "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // account #3
+        "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a", // account #4
+        "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba", // account #5
+        "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e", // account #6
+        "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356", // account #7
+      ];
+
+      // Find the index of the generalContractor in the signers array
+      let gcIndex = -1;
+      for (let i = 0; i < 8; i++) {
+        if ((await ethers.getSigners())[i].address === (await generalContractor.getAddress())) {
+          gcIndex = i;
+          break;
+        }
+      }
+
+      console.log(`General contractor is account #${gcIndex}`);
+      // Use the corresponding private key from the known Hardhat accounts
+      const gcPrivateKey = HARDHAT_PRIVATE_KEYS[gcIndex];
+
+      // Create a wallet with the private key
+      const wallet = new ethers.Wallet(gcPrivateKey);
+      console.log(`Created wallet from private key: ${wallet.address}`);
+
+      // Sign the digest directly without the Ethereum Signed Message prefix
+      const signature = wallet.signingKey.sign(digest);
+      console.log(`Signature components: r=${signature.r}, s=${signature.s}, v=${signature.v}`);
+
+      // Format the signature as expected by the contract
+      const flatSig = ethers.concat([
+        signature.r,
+        signature.s,
+        signature.v === 27 ? "0x1b" : "0x1c", // v needs to be 0x1b or 0x1c bytes
+      ]);
+      console.log(`Formatted signature: ${flatSig}`);
 
       console.log("General contractor signing agreement...");
-      await crowdFunding.connect(generalContractor).signAgreement(agreementHash, signature);
+      await crowdFunding.connect(generalContractor).signAgreement(agreementHash, flatSig);
 
       // Verify agreement is signed
       expect(await crowdFunding.gcAgreement()).to.equal(true);
