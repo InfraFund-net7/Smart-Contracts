@@ -139,11 +139,6 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
         require(msg.sender == client, "Only client can call this function");
         _;
     }
-
-    modifier onlyInvestor(address investor) {
-        require(msg.sender == investor, "Not authorized");
-        _;
-    }
     
     modifier onlyEnergyProvider() {
         require(msg.sender == energyProvider, "Only energy provider can call this function");
@@ -610,12 +605,13 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
      * @return redeemed Whether credits have been redeemed
      * @return verified Whether credits have been verified by the energy provider
      */
-    function getEnergyCreditRedemptionDetails(address investor) external view onlyInvestor(investor) returns (
+    function getEnergyCreditRedemptionDetails(address investor) external view  returns (
         uint256 tokensBurned,
         uint256 creditsEarned,
         bool redeemed,
         bool verified
     ) {
+        require(msg.sender == investor, "You are not authorized to access these details");
         EnergyCreditRedemptions storage redemption = energyCreditRedemptions[investor];
         return (
             redemption.tokensBurned,
