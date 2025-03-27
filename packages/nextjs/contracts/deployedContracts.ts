@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   31337: {
     CrowdFunding: {
-      address: "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
+      address: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
       abi: [
         {
           inputs: [
@@ -27,16 +27,6 @@ const deployedContracts = {
               type: "address",
             },
             {
-              internalType: "uint256",
-              name: "_investmentPeriod",
-              type: "uint256",
-            },
-            {
-              internalType: "uint256",
-              name: "_targetAmount",
-              type: "uint256",
-            },
-            {
               internalType: "address",
               name: "_auditor",
               type: "address",
@@ -50,11 +40,6 @@ const deployedContracts = {
               internalType: "address",
               name: "_client",
               type: "address",
-            },
-            {
-              internalType: "uint256[]",
-              name: "_milestoneAmounts",
-              type: "uint256[]",
             },
             {
               internalType: "uint256",
@@ -706,13 +691,6 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "completeFinalMilestone",
-          outputs: [],
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          inputs: [],
           name: "creditClaimDeadline",
           outputs: [
             {
@@ -1150,6 +1128,29 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "uint256",
+              name: "_investmentPeriod",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_targetAmount",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256[]",
+              name: "_milestoneAmounts",
+              type: "uint256[]",
+            },
+          ],
+          name: "initialize",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
               name: "amount",
               type: "uint256",
             },
@@ -1502,6 +1503,19 @@ const deployedContracts = {
           ],
           name: "withdrawByGC",
           outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "withdrawSecurityTokens",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
           stateMutability: "nonpayable",
           type: "function",
         },

@@ -148,63 +148,84 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     /**
      * @dev Constructor that initializes all immutable variables
      */
-    constructor(
-        address _securityToken,
-        address _mockUSDC,
-        address _energyToken,
-        uint256 _investmentPeriod,
-        uint256 _targetAmount,
-        address _auditor,
-        address _generalContractor,
-        address _client,
-        uint256[] memory _milestoneAmounts,
-        uint256 _claimPeriod
-    ) Ownable(msg.sender) {
-        require(_securityToken != address(0), "Security token cannot be zero address");
-        require(_mockUSDC != address(0), "Utility token cannot be zero address");
-        require(_energyToken != address(0), "Energy token cannot be zero address");
-        require(_auditor != address(0), "Auditor cannot be zero address");
-        require(_generalContractor != address(0), "General contractor cannot be zero address");
-        require(_client != address(0), "Client cannot be zero address");
-        require(_investmentPeriod > block.timestamp, "Investment period must be in the future");
-        require(_targetAmount > 0, "Target amount must be greater than zero");
-        require(_milestoneAmounts.length > 0, "Must have at least one milestone");
+    // Split initialization into constructor (for immutables) and initialize function
 
-        securityToken = IERC20(_securityToken);
-        mockUSDC = IERC20(_mockUSDC);
-        energyToken = IEnergyToken(_energyToken);
-        proposal = Proposal({investmentPeriod: _investmentPeriod, targetAmount: _targetAmount});
-        auditor = _auditor;
-        generalContractor = _generalContractor;
-        client = _client;
-        fundingStatus = FundingStatus.Active;
-        CLAIM_PERIOD = _claimPeriod;
+constructor(
+    address _securityToken,
+    address _mockUSDC,
+    address _energyToken,
+    address _auditor,
+    address _generalContractor,
+    address _client,
+    uint256 _claimPeriod
+) Ownable(msg.sender) {
+    // Basic validations for immutable variables
+    require(_securityToken != address(0), "Security token cannot be zero address");
+    require(_mockUSDC != address(0), "Utility token cannot be zero address");
+    require(_energyToken != address(0), "Energy token cannot be zero address");
+    require(_auditor != address(0), "Auditor cannot be zero address");
+    require(_generalContractor != address(0), "General contractor cannot be zero address");
+    require(_client != address(0), "Client cannot be zero address");
+    
+    // Set immutable state variables
+    securityToken = IERC20(_securityToken);
+    mockUSDC = IERC20(_mockUSDC);
+    energyToken = IEnergyToken(_energyToken);
+    auditor = _auditor;
+    generalContractor = _generalContractor;
+    client = _client;
+    CLAIM_PERIOD = _claimPeriod;
+    
+    // Initialize default values
+    fundingStatus = FundingStatus.Active;
+}
 
-        // Validate milestone amounts total
-        uint256 totalMilestoneAmount = 0;
-        for (uint256 i = 0; i < _milestoneAmounts.length; i++) {
-            require(_milestoneAmounts[i] > 0, "Milestone amount must be greater than zero");
-            totalMilestoneAmount += _milestoneAmounts[i];
-            milestones.push(Milestone({
-                amount: _milestoneAmounts[i], 
-                verified: false, 
-                fundsReleased: false
-            }));
-        }
-        require(totalMilestoneAmount <= _targetAmount, "Milestone amounts must not exceed target amount");
-
-
-        // Create domain separator for signatures
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes("CrowdFunding")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(this)
-            )
-        );
+/**
+ * @dev Initialize the remaining state variables and perform validations
+ * @param _investmentPeriod The duration of the investment period
+ * @param _targetAmount The funding target amount
+ * @param _milestoneAmounts Array of milestone amounts
+ */
+function initialize(
+    uint256 _investmentPeriod,
+    uint256 _targetAmount,
+    uint256[] memory _milestoneAmounts
+) external onlyOwner {
+    // Make sure initialize can only be called once
+    require(DOMAIN_SEPARATOR == bytes32(0), "Already initialized");
+    
+    // Validate non-immutable parameters
+    require(_investmentPeriod > block.timestamp, "Investment period must be in the future");
+    require(_targetAmount > 0, "Target amount must be greater than zero");
+    require(_milestoneAmounts.length > 0, "Must have at least one milestone");
+    
+    // Set proposal
+    proposal = Proposal({investmentPeriod: _investmentPeriod, targetAmount: _targetAmount});
+    
+    // Initialize milestones
+    uint256 totalMilestoneAmount = 0;
+    for (uint256 i = 0; i < _milestoneAmounts.length; i++) {
+        require(_milestoneAmounts[i] > 0, "Milestone amount must be greater than zero");
+        totalMilestoneAmount += _milestoneAmounts[i];
+        milestones.push(Milestone({
+            amount: _milestoneAmounts[i], 
+            verified: false, 
+            fundsReleased: false
+        }));
     }
+    require(totalMilestoneAmount <= _targetAmount, "Milestone amounts must not exceed target amount");
+    
+    // Create domain separator for signatures
+    DOMAIN_SEPARATOR = keccak256(
+        abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes("CrowdFunding")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(this)
+        )
+    );
+}
 
     /**
      * @dev Toggle the emergency stop state
@@ -475,6 +496,7 @@ function withdrawSecurityTokens() external nonReentrant onlyClient returns (bool
         require(fundingStatus == FundingStatus.Successful, "Funding must be successful first");
         require(gcAgreement, "General contractor must sign agreement first");
         require(amount > 0, "Amount must be greater than zero");
+
         require(bytes(description).length <= MAX_DESCRIPTION_LENGTH, "Description too long");
 
         uint256 requestId = extraFundRequests.length;

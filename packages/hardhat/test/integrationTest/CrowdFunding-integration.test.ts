@@ -1,14 +1,17 @@
+/* eslint-disable */
+
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { CrowdFunding, SecurityToken, MockUSDC, EnergyToken } from "../../typechain-types";
 
 describe("CrowdFunding Integration Tests", function () {
-  // Test variables
-  let crowdFunding: any;
-  let securityToken: any;
-  let mockUSDC: any;
-  let energyToken: any;
+  // Test variables with proper types
+  let crowdFunding: CrowdFunding;
+  let securityToken: SecurityToken;
+  let mockUSDC: MockUSDC;
+  let energyToken: EnergyToken;
 
   // Signers
   let deployer: HardhatEthersSigner;
@@ -31,6 +34,68 @@ describe("CrowdFunding Integration Tests", function () {
   const targetAmount = ethers.parseEther("1000");
   const milestoneAmounts = [ethers.parseEther("300"), ethers.parseEther("400"), ethers.parseEther("200")];
   const claimPeriod = 30 * 24 * 60 * 60; // 30 days for claim period
+
+  // Reusable function for EIP-712 signing
+  async function createAndSignAgreement(agreementText: string, signer: HardhatEthersSigner) {
+    const agreementHash = ethers.keccak256(ethers.toUtf8Bytes(agreementText));
+    console.log(`Agreement hash: ${agreementHash}`);
+
+    // Create and sign the message using EIP-712
+    const domainSeparator = await crowdFunding.DOMAIN_SEPARATOR();
+    console.log(`Domain separator: ${domainSeparator}`);
+
+    const messageHash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["bytes32", "address", "uint256"],
+        [agreementHash, crowdFundingAddress, (await ethers.provider.getNetwork()).chainId],
+      ),
+    );
+    console.log(`Message hash: ${messageHash}`);
+
+    // Create the EIP-712 digest
+    const digest = ethers.keccak256(ethers.concat([ethers.toUtf8Bytes("\x19\x01"), domainSeparator, messageHash]));
+    console.log(`Digest to sign: ${digest}`);
+
+    // The private keys for default Hardhat accounts (DO NOT USE THESE IN PRODUCTION!)
+    const HARDHAT_PRIVATE_KEYS = [
+      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // account #0
+      "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // account #1
+      "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // account #2
+      "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // account #3
+      "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a", // account #4
+      "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba", // account #5
+      "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e", // account #6
+      "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356", // account #7
+    ];
+
+    // Find the index of the signer in the signers array
+    let signerIndex = -1;
+    for (let i = 0; i < 8; i++) {
+      if ((await ethers.getSigners())[i].address === (await signer.getAddress())) {
+        signerIndex = i;
+        break;
+      }
+    }
+
+    console.log(`Signer is account #${signerIndex}`);
+
+    // Use the corresponding private key from the known Hardhat accounts
+    const privateKey = HARDHAT_PRIVATE_KEYS[signerIndex];
+
+    // Create a wallet with the private key
+    const wallet = new ethers.Wallet(privateKey);
+    console.log(`Created wallet from private key: ${wallet.address}`);
+
+    // Sign the digest directly without the Ethereum Signed Message prefix
+    const signature = wallet.signingKey.sign(digest);
+    console.log(`Signature components: r=${signature.r}, s=${signature.s}, v=${signature.v}`);
+
+    // Format the signature as expected by the contract
+    const flatSig = ethers.concat([signature.r, signature.s, signature.v === 27 ? "0x1b" : "0x1c"]);
+    console.log(`Formatted signature: ${flatSig}`);
+
+    return { agreementHash, flatSig };
+  }
 
   // Setup fixture that deploys all contracts and sets them up
   async function setupFixture() {
@@ -71,23 +136,27 @@ describe("CrowdFunding Integration Tests", function () {
     const endInvestmentPeriod = currentTimestamp + investmentPeriod;
     console.log(`\nSetting investment period to end at: ${new Date(endInvestmentPeriod * 1000).toLocaleString()}`);
 
-    // Deploy CrowdFunding contract
+    // Deploy CrowdFunding contract using the two-step pattern
     console.log("\nDeploying CrowdFunding contract...");
     const CrowdFunding = await ethers.getContractFactory("CrowdFunding");
+
+    // Step 1: Deploy with immutable parameters
     crowdFunding = await CrowdFunding.deploy(
       securityTokenAddress,
       mockUSDCAddress,
       energyTokenAddress,
-      endInvestmentPeriod,
-      targetAmount,
       await auditor.getAddress(),
       await generalContractor.getAddress(),
       await client.getAddress(),
-      milestoneAmounts,
       claimPeriod,
     );
     crowdFundingAddress = await crowdFunding.getAddress();
     console.log(`CrowdFunding deployed to: ${crowdFundingAddress}`);
+
+    // Step 2: Initialize with the remaining parameters
+    console.log("Initializing CrowdFunding contract...");
+    await crowdFunding.initialize(endInvestmentPeriod, targetAmount, milestoneAmounts);
+    console.log("CrowdFunding contract initialized successfully");
 
     // Set up permissions and initial token balances
     console.log("\nSetting up permissions and minting initial tokens...");
@@ -141,9 +210,15 @@ describe("CrowdFunding Integration Tests", function () {
       for (let i = 0; i < 3; i++) {
         const milestone = await crowdFunding.getMilestoneDetails(i);
         console.log(
-          `Milestone ${i}: ${ethers.formatEther(milestone.amount)} ETH, verified: ${milestone.verified}, funds released: ${milestone.fundsReleased}`,
+          `Milestone ${i}: ${ethers.formatEther(milestone[0])} ETH, verified: ${milestone[1]}, funds released: ${milestone[2]}`,
         );
       }
+
+      // Verify DOMAIN_SEPARATOR is initialized
+      expect(await crowdFunding.DOMAIN_SEPARATOR()).to.not.equal(
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+      );
+      console.log("Domain separator correctly initialized");
 
       console.log("=== BASIC SETUP TEST COMPLETE ===\n");
     });
@@ -225,68 +300,8 @@ describe("CrowdFunding Integration Tests", function () {
       // Step 4: General contractor signs agreement
       console.log("\n--- STEP 4: General contractor signs agreement ---");
 
-      const agreementHash = ethers.keccak256(ethers.toUtf8Bytes("Agreement terms"));
-      console.log(`Agreement hash: ${agreementHash}`);
-
-      // Create and sign the message using EIP-712
-      const domainSeparator = await crowdFunding.DOMAIN_SEPARATOR();
-      console.log(`Domain separator: ${domainSeparator}`);
-
-      const messageHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ["bytes32", "address", "uint256"],
-          [agreementHash, crowdFundingAddress, (await ethers.provider.getNetwork()).chainId],
-        ),
-      );
-      console.log(`Message hash: ${messageHash}`);
-
-      // Create the EIP-712 digest
-      const digest = ethers.keccak256(ethers.concat([ethers.toUtf8Bytes("\x19\x01"), domainSeparator, messageHash]));
-      console.log(`Digest to sign: ${digest}`);
-
-      // SIMPLEST SOLUTION FOR HARDHAT:
-      // In Hardhat tests, we can use a known private key for the generalContractor signer
-
-      // The private keys for default Hardhat accounts (DO NOT USE THESE IN PRODUCTION!)
-      const HARDHAT_PRIVATE_KEYS = [
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // account #0
-        "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // account #1
-        "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // account #2
-        "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // account #3
-        "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a", // account #4
-        "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba", // account #5
-        "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e", // account #6
-        "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356", // account #7
-      ];
-
-      // Find the index of the generalContractor in the signers array
-      let gcIndex = -1;
-      for (let i = 0; i < 8; i++) {
-        if ((await ethers.getSigners())[i].address === (await generalContractor.getAddress())) {
-          gcIndex = i;
-          break;
-        }
-      }
-
-      console.log(`General contractor is account #${gcIndex}`);
-      // Use the corresponding private key from the known Hardhat accounts
-      const gcPrivateKey = HARDHAT_PRIVATE_KEYS[gcIndex];
-
-      // Create a wallet with the private key
-      const wallet = new ethers.Wallet(gcPrivateKey);
-      console.log(`Created wallet from private key: ${wallet.address}`);
-
-      // Sign the digest directly without the Ethereum Signed Message prefix
-      const signature = wallet.signingKey.sign(digest);
-      console.log(`Signature components: r=${signature.r}, s=${signature.s}, v=${signature.v}`);
-
-      // Format the signature as expected by the contract
-      const flatSig = ethers.concat([
-        signature.r,
-        signature.s,
-        signature.v === 27 ? "0x1b" : "0x1c", // v needs to be 0x1b or 0x1c bytes
-      ]);
-      console.log(`Formatted signature: ${flatSig}`);
+      // Using the helper function for agreement signing
+      const { agreementHash, flatSig } = await createAndSignAgreement("Agreement terms", generalContractor);
 
       console.log("General contractor signing agreement...");
       await crowdFunding.connect(generalContractor).signAgreement(agreementHash, flatSig);
@@ -304,15 +319,15 @@ describe("CrowdFunding Integration Tests", function () {
 
       // Verify milestone is marked as verified
       const milestone0 = await crowdFunding.getMilestoneDetails(0);
-      console.log(`Milestone 0 verified: ${milestone0.verified}`);
+      console.log(`Milestone 0 verified: ${milestone0[1]}`);
 
       // General contractor withdraws funds for first milestone
-      console.log(`General contractor withdrawing ${ethers.formatEther(milestone0.amount)} USDC for milestone 0...`);
+      console.log(`General contractor withdrawing ${ethers.formatEther(milestone0[0])} USDC for milestone 0...`);
       await crowdFunding.connect(generalContractor).withdrawByGC(0);
 
       // Verify funds are released
       const milestone0AfterWithdraw = await crowdFunding.getMilestoneDetails(0);
-      console.log(`Milestone 0 funds released: ${milestone0AfterWithdraw.fundsReleased}`);
+      console.log(`Milestone 0 funds released: ${milestone0AfterWithdraw[2]}`);
       console.log(
         `General contractor USDC balance: ${ethers.formatEther(await mockUSDC.balanceOf(await generalContractor.getAddress()))} USDC`,
       );
@@ -348,8 +363,8 @@ describe("CrowdFunding Integration Tests", function () {
 
       console.log("Votes tallied. Getting request details...");
       const requestDetails = await crowdFunding.getExtraFundRequestDetails(0);
-      console.log(`Votes for: ${ethers.formatEther(requestDetails.votesFor)} USDC`);
-      console.log(`Votes against: ${ethers.formatEther(requestDetails.votesAgainst)} USDC`);
+      console.log(`Votes for: ${ethers.formatEther(requestDetails[5])} USDC`);
+      console.log(`Votes against: ${ethers.formatEther(requestDetails[6])} USDC`);
 
       // Fast forward time to end voting period
       console.log(`Fast-forwarding time by ${votingDuration + 1} seconds to end voting period...`);
@@ -360,8 +375,8 @@ describe("CrowdFunding Integration Tests", function () {
       await crowdFunding.connect(auditor).executeExtraFundRequest(0);
 
       // Verify request is executed
-      const request = await crowdFunding.getExtraFundRequestDetails(0);
-      console.log(`Request executed: ${request.executed}`);
+      const requestAfterExecution = await crowdFunding.getExtraFundRequestDetails(0);
+      console.log(`Request executed: ${requestAfterExecution[7]}`);
       console.log(
         `General contractor USDC balance after extra funds: ${ethers.formatEther(await mockUSDC.balanceOf(await generalContractor.getAddress()))} USDC`,
       );
@@ -373,10 +388,10 @@ describe("CrowdFunding Integration Tests", function () {
       console.log("Auditor verifying milestone 1...");
       await crowdFunding.connect(auditor).verifyMilestone(1);
       const milestone1 = await crowdFunding.getMilestoneDetails(1);
-      console.log(`Milestone 1 verified: ${milestone1.verified}`);
+      console.log(`Milestone 1 verified: ${milestone1[1]}`);
 
       // General contractor withdraws funds for second milestone
-      console.log(`General contractor withdrawing ${ethers.formatEther(milestone1.amount)} USDC for milestone 1...`);
+      console.log(`General contractor withdrawing ${ethers.formatEther(milestone1[0])} USDC for milestone 1...`);
       await crowdFunding.connect(generalContractor).withdrawByGC(1);
       console.log(
         `General contractor USDC balance: ${ethers.formatEther(await mockUSDC.balanceOf(await generalContractor.getAddress()))} USDC`,
@@ -386,32 +401,18 @@ describe("CrowdFunding Integration Tests", function () {
       console.log("Auditor verifying final milestone (2)...");
       await crowdFunding.connect(auditor).verifyMilestone(2);
       const milestone2 = await crowdFunding.getMilestoneDetails(2);
-      console.log(`Final milestone verified: ${milestone2.verified}`);
+      console.log(`Final milestone verified: ${milestone2[1]}`);
       console.log(`Final milestone achieved: ${await crowdFunding.finalMilestoneAchieved()}`);
-      // Handle the potential null value from getBlock()
+
       const deadlineTimestamp = await crowdFunding.creditClaimDeadline();
-      console.log(`creditClaimDeadline: ${deadlineTimestamp}`);
-      const latestBlock = await ethers.provider.getBlock("latest");
-      // Check if block is null before accessing its timestamp
-      if (latestBlock === null) {
-        console.log("Could not retrieve latest block");
-        return;
-      }
       console.log(`Credit claim deadline: ${new Date(Number(deadlineTimestamp) * 1000).toLocaleString()}`);
 
       // General contractor withdraws funds for final milestone
-      console.log(
-        `General contractor withdrawing ${ethers.formatEther(milestone2.amount)} USDC for final milestone...`,
-      );
+      console.log(`General contractor withdrawing ${ethers.formatEther(milestone2[0])} USDC for final milestone...`);
       await crowdFunding.connect(generalContractor).withdrawByGC(2);
       console.log(
         `General contractor USDC balance: ${ethers.formatEther(await mockUSDC.balanceOf(await generalContractor.getAddress()))} USDC`,
       );
-
-      // // Complete the final milestone (auditor marks it as complete)
-      // console.log("Auditor completing the final milestone...");
-      // await crowdFunding.connect(auditor).completeFinalMilestone();
-      // console.log(`Final milestone completed: ${await crowdFunding.finalMilestoneAchieved()}`);
 
       // Step 8: Energy credit redemption
       console.log("\n--- STEP 8: Energy credit redemption ---");
@@ -443,10 +444,10 @@ describe("CrowdFunding Integration Tests", function () {
         .connect(investor1)
         .getEnergyCreditRedemptionDetails(await investor1.getAddress());
       console.log("Energy credit redemption details:");
-      console.log(`Tokens burned: ${ethers.formatEther(redemptionDetails.tokensBurned)} ETKN`);
-      console.log(`Credits earned: ${ethers.formatEther(redemptionDetails.creditsEarned)} credits`);
-      console.log(`Verified by provider: ${redemptionDetails.verified}`);
-      console.log(`Redeemed: ${redemptionDetails.redeemed}`);
+      console.log(`Tokens burned: ${ethers.formatEther(redemptionDetails[0])} ETKN`);
+      console.log(`Credits earned: ${ethers.formatEther(redemptionDetails[1])} credits`);
+      console.log(`Verified by provider: ${redemptionDetails[3]}`);
+      console.log(`Redeemed: ${redemptionDetails[2]}`);
 
       console.log("\n=== COMPLETE WORKFLOW TEST FINISHED SUCCESSFULLY ===\n");
     });
@@ -522,7 +523,17 @@ describe("CrowdFunding Integration Tests", function () {
       console.log(`Investor 1 USDC balance after refund: ${ethers.formatEther(investorBalance)} USDC`);
       expect(investorBalance).to.equal(investAmount);
 
-      console.log("Refund successfully claimed - test passed");
+      // Test security token withdrawal by client
+      console.log("Client withdrawing pledged security tokens after funding failure...");
+      await crowdFunding.connect(client).withdrawSecurityTokens();
+
+      // Verify client received tokens back
+      const clientBalance = await securityToken.balanceOf(await client.getAddress());
+      console.log(`Client security token balance after withdrawal: ${ethers.formatEther(clientBalance)} ST`);
+      expect(clientBalance).to.equal(targetAmount);
+      expect(await crowdFunding.securityTokensWithdrawn()).to.be.true;
+
+      console.log("Refund and token withdrawal successful - test passed");
       console.log("=== REFUND TEST COMPLETE ===\n");
     });
 
@@ -604,108 +615,28 @@ describe("CrowdFunding Integration Tests", function () {
       console.log("=== ACCESS CONTROL TEST COMPLETE ===\n");
     });
 
+    it("should prevent re-initialization", async function () {
+      console.log("\n=== TESTING: Initialization Protection ===");
+
+      // Attempt to initialize the contract again
+      console.log("Attempting to initialize the contract a second time (should fail)...");
+
+      const currentTimestamp = (await ethers.provider.getBlock("latest"))!.timestamp;
+      const newEndInvestmentPeriod = currentTimestamp + investmentPeriod;
+
+      await expect(crowdFunding.initialize(newEndInvestmentPeriod, targetAmount, milestoneAmounts)).to.be.revertedWith(
+        "Already initialized",
+      );
+
+      console.log("Re-initialization properly prevented");
+      console.log("=== INITIALIZATION PROTECTION TEST COMPLETE ===\n");
+    });
+
     it("should accumulate energy credits correctly for multiple burns", async function () {
       console.log("\n=== TESTING: Energy Credit Accumulation ===");
 
       // Setup for energy credit testing
-      console.log("Setting up for energy credit testing...");
-
-      // Client pledges security tokens
-      console.log("Client pledging security tokens...");
-      await securityToken.connect(client).approve(crowdFundingAddress, targetAmount);
-      await crowdFunding.connect(client).pledgeTokens(targetAmount);
-
-      // Investors fully fund the project
-      const investAmount = ethers.parseEther("500");
-      console.log(`Investors funding the project with ${ethers.formatEther(investAmount)} USDC each...`);
-      await mockUSDC.connect(investor1).approve(crowdFundingAddress, investAmount);
-      await mockUSDC.connect(investor2).approve(crowdFundingAddress, investAmount);
-      await crowdFunding.connect(investor1).invest(investAmount);
-      await crowdFunding.connect(investor2).invest(investAmount);
-
-      // Investor claims energy tokens
-      console.log("Investor 1 claiming energy tokens...");
-      await crowdFunding.connect(investor1).claimEnergyTokens();
-      console.log(
-        `Investor 1 energy token balance: ${ethers.formatEther(await energyToken.balanceOf(await investor1.getAddress()))} ETKN`,
-      );
-
-      const agreementHash = ethers.keccak256(ethers.toUtf8Bytes("Agreement terms"));
-      console.log(`Agreement hash: ${agreementHash}`);
-
-      // Create and sign the message using EIP-712
-      const domainSeparator = await crowdFunding.DOMAIN_SEPARATOR();
-      console.log(`Domain separator: ${domainSeparator}`);
-
-      const messageHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ["bytes32", "address", "uint256"],
-          [agreementHash, crowdFundingAddress, (await ethers.provider.getNetwork()).chainId],
-        ),
-      );
-      console.log(`Message hash: ${messageHash}`);
-
-      // Create the EIP-712 digest
-      const digest = ethers.keccak256(ethers.concat([ethers.toUtf8Bytes("\x19\x01"), domainSeparator, messageHash]));
-      console.log(`Digest to sign: ${digest}`);
-
-      // SIMPLEST SOLUTION FOR HARDHAT:
-      // In Hardhat tests, we can use a known private key for the generalContractor signer
-
-      // The private keys for default Hardhat accounts (DO NOT USE THESE IN PRODUCTION!)
-      const HARDHAT_PRIVATE_KEYS = [
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // account #0
-        "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // account #1
-        "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // account #2
-        "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // account #3
-        "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a", // account #4
-        "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba", // account #5
-        "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e", // account #6
-        "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356", // account #7
-      ];
-
-      // Find the index of the generalContractor in the signers array
-      let gcIndex = -1;
-      for (let i = 0; i < 8; i++) {
-        if ((await ethers.getSigners())[i].address === (await generalContractor.getAddress())) {
-          gcIndex = i;
-          break;
-        }
-      }
-
-      console.log(`General contractor is account #${gcIndex}`);
-      // Use the corresponding private key from the known Hardhat accounts
-      const gcPrivateKey = HARDHAT_PRIVATE_KEYS[gcIndex];
-
-      // Create a wallet with the private key
-      const wallet = new ethers.Wallet(gcPrivateKey);
-      console.log(`Created wallet from private key: ${wallet.address}`);
-
-      // Sign the digest directly without the Ethereum Signed Message prefix
-      const signature = wallet.signingKey.sign(digest);
-      console.log(`Signature components: r=${signature.r}, s=${signature.s}, v=${signature.v}`);
-
-      // Format the signature as expected by the contract
-      const flatSig = ethers.concat([
-        signature.r,
-        signature.s,
-        signature.v === 27 ? "0x1b" : "0x1c", // v needs to be 0x1b or 0x1c bytes
-      ]);
-      console.log(`Formatted signature: ${flatSig}`);
-
-      console.log("General contractor signing agreement...");
-      await crowdFunding.connect(generalContractor).signAgreement(agreementHash, flatSig);
-
-      // Verify agreement is signed
-      expect(await crowdFunding.gcAgreement()).to.equal(true);
-      console.log(`Agreement signed: ${await crowdFunding.gcAgreement()}`);
-
-      // Verify and complete all milestones
-      console.log("Auditor verifying and completing all milestones...");
-      await crowdFunding.connect(auditor).verifyMilestone(0);
-      await crowdFunding.connect(auditor).verifyMilestone(1);
-      await crowdFunding.connect(auditor).verifyMilestone(2);
-      console.log("All milestones completed");
+      await setupCompleteProject();
 
       // Set energy credit rate to 2
       console.log("Setting energy credit rate to 2...");
@@ -723,8 +654,8 @@ describe("CrowdFunding Integration Tests", function () {
         .connect(investor1)
         .getEnergyCreditRedemptionDetails(await investor1.getAddress());
       console.log("After first burn:");
-      console.log(`Tokens burned: ${ethers.formatEther(redemptionAfterFirstBurn.tokensBurned)} ETKN`);
-      console.log(`Credits earned: ${ethers.formatEther(redemptionAfterFirstBurn.creditsEarned)} credits`);
+      console.log(`Tokens burned: ${ethers.formatEther(redemptionAfterFirstBurn[0])} ETKN`);
+      console.log(`Credits earned: ${ethers.formatEther(redemptionAfterFirstBurn[1])} credits`);
 
       // Second burn
       const burnAmount2 = ethers.parseEther("50");
@@ -737,18 +668,47 @@ describe("CrowdFunding Integration Tests", function () {
         .connect(investor1)
         .getEnergyCreditRedemptionDetails(await investor1.getAddress());
       console.log("After second burn:");
-      console.log(`Tokens burned: ${ethers.formatEther(redemptionDetails.tokensBurned)} ETKN`);
-      console.log(`Credits earned: ${ethers.formatEther(redemptionDetails.creditsEarned)} credits`);
+      console.log(`Tokens burned: ${ethers.formatEther(redemptionDetails[0])} ETKN`);
+      console.log(`Credits earned: ${ethers.formatEther(redemptionDetails[1])} credits`);
 
       // Verify accumulation is working correctly
-      expect(redemptionDetails.tokensBurned).to.equal(burnAmount1 + burnAmount2);
-      expect(redemptionDetails.creditsEarned).to.equal((burnAmount1 + burnAmount2) * BigInt(2));
+      expect(redemptionDetails[0]).to.equal(burnAmount1 + burnAmount2);
+      expect(redemptionDetails[1]).to.equal((burnAmount1 + burnAmount2) * BigInt(2));
 
       console.log("Energy credit accumulation working correctly");
-      console.log(`Total tokens burned: ${ethers.formatEther(redemptionDetails.tokensBurned)} ETKN`);
-      console.log(`Total credits earned: ${ethers.formatEther(redemptionDetails.creditsEarned)} credits (at 2x rate)`);
+      console.log(`Total tokens burned: ${ethers.formatEther(redemptionDetails[0])} ETKN`);
+      console.log(`Total credits earned: ${ethers.formatEther(redemptionDetails[1])} credits (at 2x rate)`);
 
       console.log("=== ENERGY CREDIT ACCUMULATION TEST COMPLETE ===\n");
     });
   });
+
+  // Helper function to setup a complete project (for reuse across tests)
+  async function setupCompleteProject() {
+    // Client pledges security tokens
+    await securityToken.connect(client).approve(crowdFundingAddress, targetAmount);
+    await crowdFunding.connect(client).pledgeTokens(targetAmount);
+
+    // Investors fully fund the project
+    const investAmount = ethers.parseEther("500");
+    await mockUSDC.connect(investor1).approve(crowdFundingAddress, investAmount);
+    await mockUSDC.connect(investor2).approve(crowdFundingAddress, investAmount);
+    await crowdFunding.connect(investor1).invest(investAmount);
+    await crowdFunding.connect(investor2).invest(investAmount);
+
+    // Investor claims energy tokens
+    await crowdFunding.connect(investor1).claimEnergyTokens();
+
+    // General contractor signs agreement
+    const { agreementHash, flatSig } = await createAndSignAgreement("Agreement terms", generalContractor);
+    await crowdFunding.connect(generalContractor).signAgreement(agreementHash, flatSig);
+
+    // Verify and complete all milestones
+    await crowdFunding.connect(auditor).verifyMilestone(0);
+    await crowdFunding.connect(auditor).verifyMilestone(1);
+    await crowdFunding.connect(auditor).verifyMilestone(2);
+
+    console.log("Project setup complete with all milestones verified");
+    return true;
+  }
 });

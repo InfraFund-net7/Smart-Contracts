@@ -1,4 +1,5 @@
 /* eslint-disable */
+
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
@@ -187,21 +188,22 @@ describe("CrowdFunding", function () {
     const currentTimestamp = await time.latest();
     const investmentPeriod = currentTimestamp + INVESTMENT_PERIOD;
 
-    // Deploy CrowdFunding contract
+    // Deploy CrowdFunding contract using the two-step pattern
     console.log("\nDeploying CrowdFunding contract...");
     const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
     crowdFunding = await CrowdFundingFactory.deploy(
       await securityToken.getAddress(),
       await mockUSDC.getAddress(),
       await energyToken.getAddress(),
-      investmentPeriod,
-      TARGET_AMOUNT,
       auditor.address,
       generalContractor.address,
       client.address,
-      MILESTONE_AMOUNTS,
       CLAIM_PERIOD,
     );
+
+    // Initialize contract
+    console.log("Initializing contract...");
+    await crowdFunding.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
 
     // Setup roles and tokens
     await energyToken.grantRole(await energyToken.MINTER_ROLE(), await crowdFunding.getAddress());
@@ -253,6 +255,118 @@ describe("CrowdFunding", function () {
 
   // ----- TEST SUITES -----
 
+  describe("Initialization", function () {
+    let uninitializedContract: CrowdFunding;
+    let deploymentTimestamp: number;
+    let localSecurityToken: SecurityToken;
+    let localMockUSDC: MockUSDC;
+    let localEnergyToken: EnergyToken;
+    let localSigners: HardhatEthersSigner[];
+    let localOwner: HardhatEthersSigner;
+    let localAuditor: HardhatEthersSigner;
+    let localGeneralContractor: HardhatEthersSigner;
+    let localClient: HardhatEthersSigner;
+
+    beforeEach(async function () {
+      // Deploy tokens
+      const SecurityTokenFactory = await ethers.getContractFactory("SecurityToken");
+      localSecurityToken = await SecurityTokenFactory.deploy("Security Token", "ST");
+
+      const MockUSDCFactory = await ethers.getContractFactory("MockUSDC");
+      localMockUSDC = await MockUSDCFactory.deploy("Mock USDC", "mUSDC");
+
+      const EnergyTokenFactory = await ethers.getContractFactory("EnergyToken");
+      localEnergyToken = await EnergyTokenFactory.deploy("Energy Token", "ET");
+
+      // Get signers
+      localSigners = await ethers.getSigners();
+      [localOwner, localAuditor, localGeneralContractor, localClient] = localSigners;
+
+      // Deploy uninitialized contract
+      const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+      uninitializedContract = await CrowdFundingFactory.deploy(
+        await localSecurityToken.getAddress(),
+        await localMockUSDC.getAddress(),
+        await localEnergyToken.getAddress(),
+        localAuditor.address,
+        localGeneralContractor.address,
+        localClient.address,
+        CLAIM_PERIOD,
+      );
+
+      deploymentTimestamp = await time.latest();
+    });
+
+    it("Should initialize with correct parameters", async function () {
+      const investmentPeriod = deploymentTimestamp + INVESTMENT_PERIOD;
+
+      // Initialize
+      await uninitializedContract.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
+
+      // Check proposal
+      const proposal = await uninitializedContract.proposal();
+      expect(proposal.investmentPeriod).to.equal(investmentPeriod);
+      expect(proposal.targetAmount).to.equal(TARGET_AMOUNT);
+
+      // Check milestones
+      const milestoneCount = await uninitializedContract.getMilestoneCount();
+      expect(milestoneCount).to.equal(MILESTONE_AMOUNTS.length);
+
+      // Check domain separator
+      expect(await uninitializedContract.DOMAIN_SEPARATOR()).to.not.equal(ethers.ZeroHash);
+    });
+
+    it("Should prevent non-owner from initializing", async function () {
+      const investmentPeriod = deploymentTimestamp + INVESTMENT_PERIOD;
+      const nonOwner = localSigners[4]; // Use a different signer
+
+      // Attempt to initialize from non-owner account
+      await expect(
+        uninitializedContract.connect(nonOwner).initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS),
+      ).to.be.revertedWithCustomError(uninitializedContract, "OwnableUnauthorizedAccount");
+    });
+
+    it("Should validate milestone amounts during initialization", async function () {
+      const investmentPeriod = deploymentTimestamp + INVESTMENT_PERIOD;
+
+      // Test with zero milestone amount
+      const badMilestones = [parseEther("100"), parseEther("0"), parseEther("200")];
+      await expect(uninitializedContract.initialize(investmentPeriod, TARGET_AMOUNT, badMilestones)).to.be.revertedWith(
+        "Milestone amount must be greater than zero",
+      );
+
+      // Test with total exceeding target amount
+      const excessiveMilestones = [parseEther("500"), parseEther("500"), parseEther("500")];
+      await expect(
+        uninitializedContract.initialize(
+          investmentPeriod,
+          TARGET_AMOUNT, // 1000 tokens
+          excessiveMilestones, // 1500 tokens total
+        ),
+      ).to.be.revertedWith("Milestone amounts must not exceed target amount");
+    });
+
+    it("Should prevent initialization with past investment period", async function () {
+      // Use a timestamp in the past
+      const pastTimestamp = deploymentTimestamp - 1000;
+
+      await expect(
+        uninitializedContract.initialize(pastTimestamp, TARGET_AMOUNT, MILESTONE_AMOUNTS),
+      ).to.be.revertedWith("Investment period must be in the future");
+    });
+
+    it("Should prevent initializing more than once", async function () {
+      // First initialization
+      const investmentPeriod = deploymentTimestamp + INVESTMENT_PERIOD;
+      await uninitializedContract.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
+
+      // Try to initialize again
+      await expect(
+        uninitializedContract.initialize(investmentPeriod + 100, TARGET_AMOUNT, MILESTONE_AMOUNTS),
+      ).to.be.revertedWith("Already initialized");
+    });
+  });
+
   describe("Deployment", function () {
     it("Should deploy with correct parameters", async function () {
       expect(await crowdFunding.auditor()).to.equal(auditor.address);
@@ -280,6 +394,9 @@ describe("CrowdFunding", function () {
 
       // Check funding status
       expect(await crowdFunding.fundingStatus()).to.equal(0); // Active
+
+      // Check domain separator
+      expect(await crowdFunding.DOMAIN_SEPARATOR()).to.not.equal(ethers.ZeroHash);
     });
 
     it("Should revert if invalid parameters are provided", async function () {
@@ -293,61 +410,61 @@ describe("CrowdFunding", function () {
           ethers.ZeroAddress,
           await mockUSDC.getAddress(),
           await energyToken.getAddress(),
-          investmentPeriod,
-          TARGET_AMOUNT,
           auditor.address,
           generalContractor.address,
           client.address,
-          MILESTONE_AMOUNTS,
           CLAIM_PERIOD,
         ),
       ).to.be.revertedWith("Security token cannot be zero address");
 
-      // Past investment period
+      // Zero address for auditor
       await expect(
         CrowdFundingFactory.deploy(
           await securityToken.getAddress(),
           await mockUSDC.getAddress(),
           await energyToken.getAddress(),
-          currentTimestamp, // past or present time
-          TARGET_AMOUNT,
-          auditor.address,
+          ethers.ZeroAddress, // zero address for auditor
           generalContractor.address,
           client.address,
-          MILESTONE_AMOUNTS,
           CLAIM_PERIOD,
+        ),
+      ).to.be.revertedWith("Auditor cannot be zero address");
+
+      // Deploy contract for initialization tests
+      const validContract = await CrowdFundingFactory.deploy(
+        await securityToken.getAddress(),
+        await mockUSDC.getAddress(),
+        await energyToken.getAddress(),
+        auditor.address,
+        generalContractor.address,
+        client.address,
+        CLAIM_PERIOD,
+      );
+
+      // Past investment period
+      await expect(
+        validContract.initialize(
+          currentTimestamp, // past or present time
+          TARGET_AMOUNT,
+          MILESTONE_AMOUNTS,
         ),
       ).to.be.revertedWith("Investment period must be in the future");
 
       // Zero target amount
       await expect(
-        CrowdFundingFactory.deploy(
-          await securityToken.getAddress(),
-          await mockUSDC.getAddress(),
-          await energyToken.getAddress(),
+        validContract.initialize(
           investmentPeriod,
           0, // zero target amount
-          auditor.address,
-          generalContractor.address,
-          client.address,
           MILESTONE_AMOUNTS,
-          CLAIM_PERIOD,
         ),
       ).to.be.revertedWith("Target amount must be greater than zero");
 
       // Empty milestone array
       await expect(
-        CrowdFundingFactory.deploy(
-          await securityToken.getAddress(),
-          await mockUSDC.getAddress(),
-          await energyToken.getAddress(),
+        validContract.initialize(
           investmentPeriod,
           TARGET_AMOUNT,
-          auditor.address,
-          generalContractor.address,
-          client.address,
           [], // empty milestone array
-          CLAIM_PERIOD,
         ),
       ).to.be.revertedWith("Must have at least one milestone");
     });
@@ -472,14 +589,14 @@ describe("CrowdFunding", function () {
         await securityToken.getAddress(),
         await mockUSDC.getAddress(),
         await energyToken.getAddress(),
-        investmentPeriod,
-        TARGET_AMOUNT,
         auditor.address,
         generalContractor.address,
         client.address,
-        MILESTONE_AMOUNTS,
         CLAIM_PERIOD,
       );
+
+      // Initialize contract
+      await newContract.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
 
       // Tokens not pledged
       await expect(newContract.connect(investor1).invest(INVESTMENT_AMOUNT_1)).to.be.revertedWith(
@@ -557,14 +674,14 @@ describe("CrowdFunding", function () {
         await securityToken.getAddress(),
         await mockUSDC.getAddress(),
         await energyToken.getAddress(),
-        investmentPeriod,
-        TARGET_AMOUNT,
         auditor.address,
         generalContractor.address,
         client.address,
-        MILESTONE_AMOUNTS,
         CLAIM_PERIOD,
       );
+
+      // Initialize contract
+      await newContract.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
 
       await expect(newContract.connect(investor1).claimEnergyTokens()).to.be.revertedWith(
         "Funding must be successful to claim tokens",
@@ -970,22 +1087,22 @@ describe("CrowdFunding", function () {
 
     it("Should revert if funding hasn't failed", async function () {
       // Deploy new contract with successful funding
-      const { currentTimestamp, investmentPeriod } = await setupBasicDeployment();
+      const CrowdFundingFactory = await ethers.getContractFactory("CrowdFunding");
+      const currentTimestamp = await time.latest();
+      const investmentPeriod = currentTimestamp + INVESTMENT_PERIOD;
 
-      const newContract = await (
-        await ethers.getContractFactory("CrowdFunding")
-      ).deploy(
+      const newContract = await CrowdFundingFactory.deploy(
         await securityToken.getAddress(),
         await mockUSDC.getAddress(),
         await energyToken.getAddress(),
-        investmentPeriod,
-        TARGET_AMOUNT,
         auditor.address,
         generalContractor.address,
         client.address,
-        MILESTONE_AMOUNTS,
         CLAIM_PERIOD,
       );
+
+      // Initialize contract
+      await newContract.initialize(investmentPeriod, TARGET_AMOUNT, MILESTONE_AMOUNTS);
 
       // Grant the MINTER_ROLE to the new contract
       await energyToken.grantRole(await energyToken.MINTER_ROLE(), await newContract.getAddress());
@@ -1003,57 +1120,46 @@ describe("CrowdFunding", function () {
       // Try to claim refund
       await expect(newContract.connect(investor1).claimRefund()).to.be.revertedWith("Funding has not failed");
     });
-  });
 
-  describe("Withdraw pledge", function () {
-    beforeEach(async function () {
-      // Pledge tokens
-      await pledgeTokens();
+    it("Should allow client to withdraw security tokens when funding fails", async function () {
+      const clientBalanceBefore = await securityToken.balanceOf(client.address);
+      const contractSecurityBalance = await securityToken.balanceOf(await crowdFunding.getAddress());
 
-      // Partial funding
-      await crowdFunding.connect(investor1).invest(INVESTMENT_AMOUNT_1);
+      // Withdraw security tokens
+      const tx = await crowdFunding.connect(client).withdrawSecurityTokens();
+      const receipt = await tx.wait();
 
-      // Fast forward past the investment period to make funding fail
-      const proposal = await crowdFunding.proposal();
-      await time.increaseTo(Number(proposal.investmentPeriod) + 1);
+      // Check event
+      const event = await getEventFromTx(receipt!, "SecurityTokensWithdrawn");
+      expect(event).to.not.be.null;
+      expect(event!.args.generalContractor).to.equal(client.address);
+      expect(event!.args.amount).to.equal(TARGET_AMOUNT);
 
-      // Update funding status
-      await crowdFunding.updateFundingStatus();
+      // Check state update
+      expect(await crowdFunding.securityTokensWithdrawn()).to.be.true;
+
+      // Check client balance increased
+      const clientBalanceAfter = await securityToken.balanceOf(client.address);
+      expect(clientBalanceAfter - clientBalanceBefore).to.equal(TARGET_AMOUNT);
+
+      // Check contract balance is zero
+      expect(await securityToken.balanceOf(await crowdFunding.getAddress())).to.equal(0);
     });
-    it("should allow client to withdraw security tokens when funding fails", async function () {
-      console.log("\n=== TESTING: Security Token Withdrawal on Funding Failure ===");
 
-      // Verify funding failed
-      expect(await crowdFunding.fundingStatus()).to.equal(2); // 2 is Failed
-      console.log(`Funding status: ${await crowdFunding.fundingStatus()} (Failed)`);
+    it("Should prevent withdrawing security tokens if already withdrawn", async function () {
+      // Withdraw once
+      await crowdFunding.connect(client).withdrawSecurityTokens();
 
-      // Client withdraws security tokens
-      console.log("Client withdrawing security tokens...");
-      await expect(crowdFunding.connect(client).withdrawSecurityTokens())
-        .to.emit(crowdFunding, "SecurityTokensWithdrawn")
-        .withArgs(await client.getAddress(), TARGET_AMOUNT);
-
-      console.log(
-        `Security token balance of crowdfunding contract after withdrawal: ${ethers.formatEther(await securityToken.balanceOf(crowdFunding))} STKN`,
-      );
-      console.log(
-        `Security token balance of client after withdrawal: ${ethers.formatEther(await securityToken.balanceOf(await client.getAddress()))} STKN`,
-      );
-
-      // Verify client received all tokens back
-      expect(await securityToken.balanceOf(await client.getAddress())).to.equal(TARGET_AMOUNT);
-      expect(await securityToken.balanceOf(crowdFunding)).to.equal(0);
-
-      console.log("Security tokens successfully withdrawn");
-
-      // Attempt to withdraw again (should fail)
-      console.log("Client attempting to withdraw security tokens again (should fail)...");
+      // Try to withdraw again
       await expect(crowdFunding.connect(client).withdrawSecurityTokens()).to.be.revertedWith(
         "Security tokens already withdrawn",
       );
+    });
 
-      console.log("=== SECURITY TOKEN WITHDRAWAL TEST COMPLETE ===\n");
+    it("Should prevent non-client from withdrawing security tokens", async function () {
+      await expect(crowdFunding.connect(investor1).withdrawSecurityTokens()).to.be.revertedWith(
+        "Only client can call this function",
+      );
     });
   });
 });
-/* eslint-enable */

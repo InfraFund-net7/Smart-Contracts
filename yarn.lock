@@ -3835,7 +3835,7 @@ __metadata:
     prettier: ~3.3.3
     prettier-plugin-solidity: ~1.4.1
     qrcode: ~1.5.4
-    solidity-coverage: ~0.8.13
+    solidity-coverage: ^0.8.14
     ts-node: ~10.9.1
     typechain: ~8.3.2
     typescript: <5.6.0
@@ -16351,7 +16351,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"solidity-coverage@npm:~0.8.13":
+"solidity-coverage@npm:^0.8.14":
   version: 0.8.14
   resolution: "solidity-coverage@npm:0.8.14"
   dependencies:
