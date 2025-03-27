@@ -1004,5 +1004,56 @@ describe("CrowdFunding", function () {
       await expect(newContract.connect(investor1).claimRefund()).to.be.revertedWith("Funding has not failed");
     });
   });
+
+  describe("Withdraw pledge", function () {
+    beforeEach(async function () {
+      // Pledge tokens
+      await pledgeTokens();
+
+      // Partial funding
+      await crowdFunding.connect(investor1).invest(INVESTMENT_AMOUNT_1);
+
+      // Fast forward past the investment period to make funding fail
+      const proposal = await crowdFunding.proposal();
+      await time.increaseTo(Number(proposal.investmentPeriod) + 1);
+
+      // Update funding status
+      await crowdFunding.updateFundingStatus();
+    });
+    it("should allow client to withdraw security tokens when funding fails", async function () {
+      console.log("\n=== TESTING: Security Token Withdrawal on Funding Failure ===");
+
+      // Verify funding failed
+      expect(await crowdFunding.fundingStatus()).to.equal(2); // 2 is Failed
+      console.log(`Funding status: ${await crowdFunding.fundingStatus()} (Failed)`);
+
+      // Client withdraws security tokens
+      console.log("Client withdrawing security tokens...");
+      await expect(crowdFunding.connect(client).withdrawSecurityTokens())
+        .to.emit(crowdFunding, "SecurityTokensWithdrawn")
+        .withArgs(await client.getAddress(), TARGET_AMOUNT);
+
+      console.log(
+        `Security token balance of crowdfunding contract after withdrawal: ${ethers.formatEther(await securityToken.balanceOf(crowdFunding))} STKN`,
+      );
+      console.log(
+        `Security token balance of client after withdrawal: ${ethers.formatEther(await securityToken.balanceOf(await client.getAddress()))} STKN`,
+      );
+
+      // Verify client received all tokens back
+      expect(await securityToken.balanceOf(await client.getAddress())).to.equal(TARGET_AMOUNT);
+      expect(await securityToken.balanceOf(crowdFunding)).to.equal(0);
+
+      console.log("Security tokens successfully withdrawn");
+
+      // Attempt to withdraw again (should fail)
+      console.log("Client attempting to withdraw security tokens again (should fail)...");
+      await expect(crowdFunding.connect(client).withdrawSecurityTokens()).to.be.revertedWith(
+        "Security tokens already withdrawn",
+      );
+
+      console.log("=== SECURITY TOKEN WITHDRAWAL TEST COMPLETE ===\n");
+    });
+  });
 });
 /* eslint-enable */

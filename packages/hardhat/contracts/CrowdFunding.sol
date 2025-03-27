@@ -369,6 +369,29 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     }
 
     /**
+ * @dev Allows the client to withdraw pledged security tokens if funding fails
+ * @return bool Success of the withdrawal
+ */
+function withdrawSecurityTokens() external nonReentrant onlyClient returns (bool) {
+    // Ensure funding has failed
+    _updateFundingStatus(); // Ensure status is up to date
+    require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
+    require(!securityTokensWithdrawn, "Security tokens already withdrawn");
+    require(tokensPledged, "No tokens were pledged");
+    
+    securityTokensWithdrawn = true;
+    
+    uint256 securityTokenBalance = securityToken.balanceOf(address(this));
+    require(securityTokenBalance > 0, "No security tokens to withdraw");
+   
+    securityToken.safeTransfer(client, securityTokenBalance);
+    
+    emit SecurityTokensWithdrawn(client, securityTokenBalance);
+    
+    return true;
+}
+
+    /**
      * @dev Sign agreement with a signature to prevent replay attacks
      * @param agreementHash Hash of the agreement
      * @param signature Signature of the agreement
