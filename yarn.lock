@@ -3831,7 +3831,7 @@ __metadata:
     hardhat: ^2.22.19
     hardhat-deploy: ~0.12.4
     hardhat-deploy-ethers: ~0.4.2
-    hardhat-gas-reporter: ~2.2.1
+    hardhat-gas-reporter: ^2.2.2
     prettier: ~3.3.3
     prettier-plugin-solidity: ~1.4.1
     qrcode: ~1.5.4
@@ -5042,6 +5042,13 @@ __metadata:
   dependencies:
     "@types/deep-eql": "*"
   checksum: 57e1b3fe7b546a227702f1e417e0424edeb96f9f038b4e1949a73762f186986e8187811f9a47ab38ff37b6d2e237234c9eab99c8e350e05598725b358844e4fc
+  languageName: node
+  linkType: hard
+
+"@types/crypto-js@npm:^4":
+  version: 4.2.2
+  resolution: "@types/crypto-js@npm:4.2.2"
+  checksum: 727daa0d2db35f0abefbab865c23213b6ee6a270e27e177939bbe4b70d1e84c2202d9fac4ea84859c4b4d49a4ee50f948f601327a39b69ec013288018ba07ca5
   languageName: node
   linkType: hard
 
@@ -8202,6 +8209,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"crypto-js@npm:^4.2.0":
+  version: 4.2.0
+  resolution: "crypto-js@npm:4.2.0"
+  checksum: f051666dbc077c8324777f44fbd3aaea2986f198fe85092535130d17026c7c2ccf2d23ee5b29b36f7a4a07312db2fae23c9094b644cc35f7858b1b4fcaf27774
+  languageName: node
+  linkType: hard
+
 "css-selector-tokenizer@npm:^0.8":
   version: 0.8.0
   resolution: "css-selector-tokenizer@npm:0.8.0"
@@ -10931,7 +10945,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"hardhat-gas-reporter@npm:~2.2.1":
+"hardhat-gas-reporter@npm:^2.2.2":
   version: 2.2.2
   resolution: "hardhat-gas-reporter@npm:2.2.2"
   dependencies:
@@ -15981,6 +15995,8 @@ __metadata:
   resolution: "se-2@workspace:."
   dependencies:
     "@nomicfoundation/hardhat-ethers": ^3.0.8
+    "@types/crypto-js": ^4
+    crypto-js: ^4.2.0
     hardhat: ^2.22.19
     husky: ~9.1.6
     lint-staged: ~13.2.2

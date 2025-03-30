@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
+    "@types/crypto-js": "^4",
     "hardhat": "^2.22.19",
     "husky": "~9.1.6",
     "lint-staged": "~13.2.2"
@@ -57,5 +58,8 @@
   "packageManager": "yarn@3.2.3",
   "engines": {
     "node": ">=20.18.3"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0"
   }
 }
