@@ -57,4 +57,4 @@ export default deployTokens;
 
 // Tags are useful if you have multiple deploy files and only want to run one of them.
 // e.g. yarn deploy --tags Tokens
-deployTokens.tags = ["Tokens", "All"];
+deployTokens.tags = ["Tokens"];

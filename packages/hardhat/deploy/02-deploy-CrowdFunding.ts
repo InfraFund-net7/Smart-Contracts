@@ -8,7 +8,7 @@ import { DeployFunction } from "hardhat-deploy/types";
  * @param hre HardhatRuntimeEnvironment object.
  */
 const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
-  const { deployments, getNamedAccounts, ethers } = hre;
+  const { deployments, getNamedAccounts } = hre;
   const { deploy, get } = deployments;
 
   // Get named accounts from hardhat.config.ts
@@ -26,16 +26,6 @@ const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEn
   console.log("SecurityToken:", securityTokenDeployment.address);
   console.log("MockUSDC:", mockUSDCDeployment.address);
   console.log("EnergyToken:", energyTokenDeployment.address);
-
-  // Set up investment period (7 days from now)
-  const currentTimestamp = Math.floor(Date.now() / 1000);
-  const investmentPeriod = currentTimestamp + 7 * 24 * 60 * 60; // 7 days
-
-  // Set target amount
-  const targetAmount = ethers.parseEther("1000");
-
-  // Set milestone amounts (should add up to target amount)
-  const milestoneAmounts = [ethers.parseEther("300"), ethers.parseEther("400"), ethers.parseEther("300")];
 
   // Set claim period (30 days)
   const claimPeriod = 30 * 24 * 60 * 60;
@@ -57,14 +47,20 @@ const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEn
   });
   console.log("CrowdFunding deployed to:", crowdFundingDeployment.address);
 
+  // ---------------------- Initialization for Post-deployment Setup ----------------------
+
   // Get instances of deployed contracts for post-deployment configuration
-  const energyToken = await ethers.getContractAt("EnergyToken", energyTokenDeployment.address);
-  const crowdFunding = await ethers.getContractAt("CrowdFunding", crowdFundingDeployment.address);
+  const energyToken = await hre.ethers.getContractAt("EnergyToken", energyTokenDeployment.address);
+  const crowdFunding = await hre.ethers.getContractAt("CrowdFunding", crowdFundingDeployment.address);
 
   // Initialize the crowdfunding contract
   console.log("Initializing CrowdFunding contract...");
-  await crowdFunding.initialize(investmentPeriod, targetAmount, milestoneAmounts);
-  console.log("CrowdFunding contract initialized");
+  // Uncomment the following lines once you have your investment period, target amount, and milestone amounts set
+  // const investmentPeriod = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60; // Example: 7 days from now
+  // const targetAmount = ethers.parseEther("1000");
+  // const milestoneAmounts = [ethers.parseEther("300"), ethers.parseEther("400"), ethers.parseEther("300")];
+  // await crowdFunding.initialize(investmentPeriod, targetAmount, milestoneAmounts);
+  // console.log("CrowdFunding contract initialized");
 
   // Grant minter role to CrowdFunding contract to mint energy tokens
   const MINTER_ROLE = await energyToken.MINTER_ROLE();
@@ -82,5 +78,5 @@ export default deployCrowdFunding;
 
 // Tags are useful if you have multiple deploy files and only want to run one of them.
 // e.g. yarn deploy --tags CrowdFunding
-deployCrowdFunding.tags = ["CrowdFunding", "All"];
+deployCrowdFunding.tags = ["CrowdFunding"];
 deployCrowdFunding.dependencies = ["Tokens"]; // This ensures tokens are deployed first

@@ -8,9 +8,6 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "@nomicfoundation/hardhat-verify";
 import "hardhat-deploy";
-// import { task } from "hardhat/config";
-// import generateTsAbis from "./scripts/generateTsAbis";
-// import CryptoJS from "crypto-js";
 
 // Use runtime decrypted keys if available, otherwise use encrypted keys
 const deployerPrivateKey =
@@ -43,9 +40,7 @@ const investor3PrivateKey =
   process.env.INVESTOR3_PRIVATE_KEY_ENCRYPTED;
 
 const providerApiKey = process.env.ALCHEMY_API_KEY || "your-api-key";
-const etherscanApiKey = process.env.ETHERSCAN_API_KEY || "your-etherscan-api-key";
-// const etherscanOptimisticApiKey = process.env.ETHERSCAN_OPTIMISTIC_API_KEY || "your-optimistic-etherscan-api-key";
-// const basescanApiKey = process.env.BASESCAN_API_KEY || "your-basescan-api-key";
+//const etherscanApiKey = process.env.ETHERSCAN_API_KEY || "your-etherscan-api-key";
 
 // Helper function to get account private keys
 const getNetworkAccounts = (): string[] | undefined => {
@@ -153,7 +148,6 @@ const config: HardhatUserConfig = {
       url: `https://opt-sepolia.g.alchemy.com/v2/${providerApiKey}`,
       accounts: getNetworkAccounts(),
     },
-    // Add other networks here as necessary
   },
 
   gasReporter: {
@@ -162,7 +156,17 @@ const config: HardhatUserConfig = {
   },
 
   etherscan: {
-    apiKey: etherscanApiKey,
+    apiKey: process.env.ETHERSCAN_API_KEY || process.env.ETHERSCAN_OPTIMISTIC_API_KEY, // General Etherscan API key for mainnet, etc.
+    customChains: [
+      {
+        network: "optimismSepolia",
+        chainId: 11155420, // Chain ID for Optimism Sepolia
+        urls: {
+          apiURL: "https://api-sepolia-optimistic.etherscan.io/api",
+          browserURL: "https://optimistic.etherscan.io/", // Browser URL for Optimism Sepolia
+        },
+      },
+    ],
   },
 
   typechain: {
