@@ -38,6 +38,10 @@ const investor3PrivateKey =
   process.env.__RUNTIME_INVESTOR3_PRIVATE_KEY ||
   process.env.INVESTOR3_PRIVATE_KEY ||
   process.env.INVESTOR3_PRIVATE_KEY_ENCRYPTED;
+const infraFundWalletPrivateKey =
+  process.env.__RUNTIME_INFRAFUNDWALLET_PRIVATE_KEY ||
+  process.env.INFRAFUNDWALLET_PRIVATE_KEY ||
+  process.env.INFRAFUNDWALLET_PRIVATE_KEY_ENCRYPTED;
 
 const providerApiKey = process.env.ALCHEMY_API_KEY || "your-api-key";
 //const etherscanApiKey = process.env.ETHERSCAN_API_KEY || "your-etherscan-api-key";
@@ -58,6 +62,7 @@ const getNetworkAccounts = (): string[] | undefined => {
     investor1PrivateKey,
     investor2PrivateKey,
     investor3PrivateKey,
+    infraFundWalletPrivateKey,
   ];
 
   // Filter out undefined values and cast to string[]

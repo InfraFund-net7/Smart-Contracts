@@ -15,6 +15,7 @@ import "./IEnergyToken.sol";
  * @title CrowdFunding
  * @dev A contract for managing CrowdFunding for infrastructure projects with milestone-based releases
  * and DAO voting for extra fund requests.
+ * 
  */
 contract CrowdFunding is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -164,8 +165,8 @@ constructor(
     address _auditor,
     address _generalContractor,
     address _client,
-    uint256 _claimPeriod,
-    address _infraFundWallet
+    address _infraFundWallet,
+    uint256 _claimPeriod
 ) Ownable(msg.sender) {
     // Basic validations for immutable variables
     require(_securityToken != address(0), "Security token cannot be zero address");
@@ -184,7 +185,7 @@ constructor(
     generalContractor = _generalContractor;
     client = _client;
     CLAIM_PERIOD = _claimPeriod;
-        infraFundWallet = _infraFundWallet;    
+    infraFundWallet = _infraFundWallet;    
     // Initialize default values
     fundingStatus = FundingStatus.Active;
 }
@@ -343,7 +344,7 @@ function _updateFundingStatus() internal {
  * @dev External function to trigger the funding status update.
  * Can be called by anyone, but only works if the funding is still active.
  */
-function updateFundingStatus() external {
+function updateFundingStatus() external nonReentrant{
     require(fundingStatus == FundingStatus.Active, "Funding is already finalized");
     _updateFundingStatus();
 }
@@ -386,7 +387,7 @@ function updateFundingStatus() external {
      * @dev Claim refund if funding failed
      */
     function claimRefund() external nonReentrant {
-        _updateFundingStatus(); // Ensure status is up to date
+       // _updateFundingStatus(); // Ensure status is up to date
         require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
         require(investorBalances[msg.sender] > 0, "No investment to refund");
         require(!hasWithdrawnRefund[msg.sender], "Refund already claimed");
@@ -401,7 +402,7 @@ function updateFundingStatus() external {
     /**
      * @dev Withdraw platform fee - can only be called when funding is successful
      */
-    function _withdrawPlatformFee() internal nonReentrant {
+    function _withdrawPlatformFee() internal {
         require(fundingStatus == FundingStatus.Successful, "Funding must be successful");
         require(!platformFeeWithdrawn, "Platform fee already withdrawn");
         
@@ -421,7 +422,7 @@ function updateFundingStatus() external {
  */
 function withdrawSecurityTokens() external nonReentrant onlyClient returns (bool) {
     // Ensure funding has failed
-    _updateFundingStatus(); // Ensure status is up to date
+//    _updateFundingStatus(); // Ensure status is up to date
     require(fundingStatus == FundingStatus.Failed, "Funding has not failed");
     require(!securityTokensWithdrawn, "Security tokens already withdrawn");
     require(tokensPledged, "No tokens were pledged");
