@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
+
 import "./SecurityToken.sol";
 import "./IEnergyToken.sol";
 
@@ -24,6 +26,8 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     struct Proposal {
         uint256 investmentPeriod;
         uint256 targetAmount;
+        uint256 platformFeePercentage; // Fee percentage (e.g., 5 for 5%)
+
     }
 
     struct Milestone {
@@ -59,6 +63,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     IERC20 public immutable mockUSDC;
     IEnergyToken public immutable energyToken;
     uint256 public immutable CLAIM_PERIOD;
+    address public immutable infraFundWallet;
     
     // Constants
     uint256 public constant MAX_VOTING_PERIOD = 7 days;
@@ -71,6 +76,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     Proposal public proposal;
     bytes32 public DOMAIN_SEPARATOR;
     uint256 public fundsRaised;
+    bool public platformFeeWithdrawn;
     uint256 public totalTokensBurned;
     uint256 public energyCreditRate = 1; // Default 1:1 conversion
     address public energyProvider;
@@ -104,6 +110,7 @@ contract CrowdFunding is ReentrancyGuard, Ownable {
     event FundsWithdrawn(uint256 indexed milestoneIndex, uint256 amount);
     event EmergencyToggled(bool stopped);
     event AgreementSigned(address indexed generalContractor);
+    event PlatformFeeWithdrawn(uint256 amount);
     event EnergyTokensReleased();
     event ExtraFundRequestCreated(uint256 indexed requestId, bytes32 proposalHash, uint256 amount, string description);
     event ExtraFundRequestApproved(uint256 indexed requestId, uint256 indexed votingDuration);
@@ -157,7 +164,8 @@ constructor(
     address _auditor,
     address _generalContractor,
     address _client,
-    uint256 _claimPeriod
+    uint256 _claimPeriod,
+    address _infraFundWallet
 ) Ownable(msg.sender) {
     // Basic validations for immutable variables
     require(_securityToken != address(0), "Security token cannot be zero address");
@@ -166,7 +174,8 @@ constructor(
     require(_auditor != address(0), "Auditor cannot be zero address");
     require(_generalContractor != address(0), "General contractor cannot be zero address");
     require(_client != address(0), "Client cannot be zero address");
-    
+    require(_infraFundWallet != address(0), "InfraFund wallet cannot be zero address");
+ 
     // Set immutable state variables
     securityToken = IERC20(_securityToken);
     mockUSDC = IERC20(_mockUSDC);
@@ -175,7 +184,7 @@ constructor(
     generalContractor = _generalContractor;
     client = _client;
     CLAIM_PERIOD = _claimPeriod;
-    
+        infraFundWallet = _infraFundWallet;    
     // Initialize default values
     fundingStatus = FundingStatus.Active;
 }
@@ -189,7 +198,9 @@ constructor(
 function initialize(
     uint256 _investmentPeriod,
     uint256 _targetAmount,
-    uint256[] memory _milestoneAmounts
+    uint256[] memory _milestoneAmounts,
+    uint256 _platformFeePercentage
+
 ) external onlyOwner {
     // Make sure initialize can only be called once
     require(DOMAIN_SEPARATOR == bytes32(0), "Already initialized");
@@ -198,9 +209,10 @@ function initialize(
     require(_investmentPeriod > block.timestamp, "Investment period must be in the future");
     require(_targetAmount > 0, "Target amount must be greater than zero");
     require(_milestoneAmounts.length > 0, "Must have at least one milestone");
+    require(_platformFeePercentage <= 100, "Platform fee percentage must be <= 100");    
     
     // Set proposal
-    proposal = Proposal({investmentPeriod: _investmentPeriod, targetAmount: _targetAmount});
+    proposal = Proposal({investmentPeriod: _investmentPeriod, targetAmount: _targetAmount, platformFeePercentage: _platformFeePercentage});
     
     // Initialize milestones
     uint256 totalMilestoneAmount = 0;
@@ -306,38 +318,35 @@ function initialize(
         // Update funding status based on current conditions
         _updateFundingStatus();
 
-        // Check if the funding goal is reached and release energy tokens automatically
-        if (newTotalRaised >= proposal.targetAmount) {
-            fundingStatus = FundingStatus.Successful;
-            emit FundingSuccessful();
-
-            // Automatically release energy tokens to all investors
-            _releaseEnergyTokens();
-        }
-
         return true;
     }
 
-    /**
-     * @dev External function to manually update funding status
-     */
-    function updateFundingStatus() external {
-        _updateFundingStatus();
-    }
 
-    /**
-     * @dev Internal function to update funding status
-     */
-    function _updateFundingStatus() internal {
-        // Check if the funding deadline has passed
-        if (block.timestamp >= proposal.investmentPeriod && fundingStatus == FundingStatus.Active) {
-            // If the target was not met, mark the funding as failed
-            if (fundsRaised < proposal.targetAmount) {
-                fundingStatus = FundingStatus.Failed;
-                emit FundingFailed();
-            }
-        }
+ /**
+ * @dev Updates the funding status based on raised amount and time, and emits an event when updated.
+ */
+function _updateFundingStatus() internal {
+    require(fundingStatus == FundingStatus.Active, "Funding is no longer active");
+
+    if (fundsRaised >= proposal.targetAmount) {
+        fundingStatus = FundingStatus.Successful;
+        emit FundingSuccessful();
+        _releaseEnergyTokens(); // Automatically release energy tokens
+        _withdrawPlatformFee();
+    } else if (block.timestamp >= proposal.investmentPeriod) {
+        fundingStatus = FundingStatus.Failed;
+        emit FundingFailed();
     }
+}
+
+/** 
+ * @dev External function to trigger the funding status update.
+ * Can be called by anyone, but only works if the funding is still active.
+ */
+function updateFundingStatus() external {
+    require(fundingStatus == FundingStatus.Active, "Funding is already finalized");
+    _updateFundingStatus();
+}
 
     /**
      * @dev Internal function to release energy tokens when funding is successful
@@ -388,6 +397,23 @@ function initialize(
         mockUSDC.safeTransfer(msg.sender, amount);
         emit RefundClaimed(msg.sender, amount);
     }
+
+    /**
+     * @dev Withdraw platform fee - can only be called when funding is successful
+     */
+    function _withdrawPlatformFee() internal nonReentrant {
+        require(fundingStatus == FundingStatus.Successful, "Funding must be successful");
+        require(!platformFeeWithdrawn, "Platform fee already withdrawn");
+        
+        platformFeeWithdrawn = true;
+        
+        uint256 feeAmount = (fundsRaised * proposal.platformFeePercentage) / 100;
+        require(feeAmount > 0, "No platform fee to withdraw");
+        
+        mockUSDC.safeTransfer(infraFundWallet, feeAmount);
+        emit PlatformFeeWithdrawn(feeAmount);
+    }
+
 
     /**
  * @dev Allows the client to withdraw pledged security tokens if funding fails
@@ -541,63 +567,65 @@ function withdrawSecurityTokens() external nonReentrant onlyClient returns (bool
      * @param requestId The ID of the extra fund request
      * @param support True to vote in favor, false to vote against
      */
-    function voteOnExtraFundRequest(uint256 requestId, bool support) external nonReentrant notStopped {
-        require(requestId < extraFundRequests.length, "Invalid request ID");
-
-        uint256 voterBalance = investorBalances[msg.sender];
-        require(voterBalance > 0, "Only investors with stake can vote");
-
-        ExtraFundRequest storage request = extraFundRequests[requestId];
-
-        require(request.auditorApproved, "Request not approved by auditor");
-        require(request.votingEndTime > 0, "Voting period not started");
-        require(block.timestamp < request.votingEndTime, "Voting period ended");
-        require(!request.executed, "Request already executed");
-        require(!hasVoted[requestId][msg.sender], "Already voted");
-
-        // Mark voter as having voted
-        hasVoted[requestId][msg.sender] = true;
-
-        // Increase vote count based on stake
-        if (support) {
-            request.votesFor += voterBalance;
-        } else {
-            request.votesAgainst += voterBalance;
-        }
-
-        emit ExtraFundVoteCast(requestId, msg.sender, support, voterBalance);
+function voteOnExtraFundRequest(uint256 requestId, bool support) external nonReentrant notStopped {
+    // First validate the request ID
+    require(requestId < extraFundRequests.length, "Invalid request ID");
+    
+    // Load the request once to reduce storage reads
+    ExtraFundRequest storage request = extraFundRequests[requestId];
+    
+    // Validate voter balance once
+    uint256 voterBalance = investorBalances[msg.sender];
+    require(voterBalance > 0, "Only investors with stake can vote");
+    
+    // Check all the request conditions
+    require(request.auditorApproved, "Request not approved by auditor");
+    require(request.votingEndTime > 0, "Voting period not started");
+    require(block.timestamp < request.votingEndTime, "Voting period ended");
+    require(!request.executed, "Request already executed");
+    require(!hasVoted[requestId][msg.sender], "Already voted");
+    
+    // Mark voter as having voted
+    hasVoted[requestId][msg.sender] = true;
+    
+    // Update votes using a more gas-efficient approach
+    if (support) {
+        request.votesFor += voterBalance;
+    } else {
+        request.votesAgainst += voterBalance;
     }
+    
+    emit ExtraFundVoteCast(requestId, msg.sender, support, voterBalance);
+}
 
-    /**
-     * @dev Execute an extra fund request after voting period
-     * @param requestId ID of the extra fund request
-     */
-    function executeExtraFundRequest(uint256 requestId) external nonReentrant notStopped onlyAuditor {
-        require(requestId < extraFundRequests.length, "Invalid request ID");
-        
-        ExtraFundRequest storage request = extraFundRequests[requestId];
-        require(request.auditorApproved, "Request not approved by auditor");
-        require(block.timestamp >= request.votingEndTime, "Voting period not ended");
-        require(!request.executed, "Request already executed");
-
-        uint256 totalVotes = request.votesFor + request.votesAgainst;
-        uint256 quorum = (totalVotes * QUORUM_PERCENTAGE) / 100;
-
-        require(totalVotes >= quorum, "Quorum not met");
-
-        bool approved = request.votesFor > request.votesAgainst;
-        request.executed = true;
-
-        // If the request is approved, transfer the funds to the contractor
-        if (approved) {
-            mockUSDC.safeTransfer(generalContractor, request.amount);
-            emit ExtraFundRequestExecuted(requestId, true);
-        } else {
-            // If the request is rejected, emit a rejection event
-            emit ExtraFundRequestRejected(requestId);
-        }
-    }
-
+function executeExtraFundRequest(uint256 requestId) external nonReentrant notStopped onlyGeneralContractor {
+    // First validate the request ID
+    require(requestId < extraFundRequests.length, "Invalid request ID");
+    
+    // Load the request once to reduce storage reads
+    ExtraFundRequest storage request = extraFundRequests[requestId];
+    
+    // Check all request conditions
+    require(request.auditorApproved, "Request not approved by auditor");
+    require(block.timestamp >= request.votingEndTime, "Voting period not ended");
+    require(!request.executed, "Request already executed");
+    
+    // Calculate vote totals and check quorum
+    uint256 totalVotes = request.votesFor + request.votesAgainst;
+    uint256 quorum = (totalVotes * QUORUM_PERCENTAGE) / 100;
+    require(totalVotes >= quorum, "Quorum not met");
+    
+    // Determine if approved and require that the vote passed
+    bool approved = request.votesFor > request.votesAgainst;
+    require(approved, "Request was not approved by voters");
+    
+    // Mark as executed (following checks-effects-interactions pattern)
+    request.executed = true;
+    
+    // Transfer the funds to the contractor
+    mockUSDC.safeTransfer(generalContractor, request.amount);
+    emit ExtraFundRequestExecuted(requestId, true);
+}
     /**
      * @dev Verify energy credit redemption
      * @param investor Address of the investor
@@ -666,6 +694,25 @@ function withdrawSecurityTokens() external nonReentrant onlyClient returns (bool
         );
     }
 
+    /**
+     * @dev Get the available funds that can be used to fulfill an extra fund request
+     * @return uint256 Available funds
+     */
+    function getAvailableFunds() public view returns (uint256) {
+        // Calculate total allocated funds
+        uint256 allocatedFunds = 0;
+        
+        // Add milestone allocations
+        for (uint256 i = 0; i < milestones.length; i++) {
+            allocatedFunds += milestones[i].amount;
+        }
+        
+        // Add platform fee
+        allocatedFunds += (fundsRaised * proposal.platformFeePercentage) / 100;
+        
+        // Return available funds
+        return fundsRaised > allocatedFunds ? fundsRaised - allocatedFunds : 0;
+    }
     /**
      * @dev Get the total number of milestones in the contract
      * @return uint256 Total number of milestones
