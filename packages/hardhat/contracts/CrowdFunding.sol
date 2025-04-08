@@ -15,7 +15,6 @@ import "./IEnergyToken.sol";
  * @title CrowdFunding
  * @dev A contract for managing CrowdFunding for infrastructure projects with milestone-based releases
  * and DAO voting for extra fund requests.
- * 
  */
 contract CrowdFunding is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
