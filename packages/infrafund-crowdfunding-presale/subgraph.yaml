@@ -1,0 +1,98 @@
+specVersion: 1.3.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: CrowdFunding
+    network: optimism-sepolia
+    source:
+      address: "0x4AF0B42984000733f98E4445CC184ce1bCF2D3e9"
+      abi: CrowdFunding
+      startBlock: 26182004
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - AgreementSigned
+        - EmergencyToggled
+        - EnergyCreditRateUpdated
+        - EnergyCreditsClaimed
+        - EnergyCreditsVerified
+        - EnergyProviderSet
+        - EnergyTokensBurned
+        - EnergyTokensClaimed
+        - EnergyTokensReleased
+        - ExtraFundRequestApproved
+        - ExtraFundRequestCreated
+        - ExtraFundRequestExecuted
+        - ExtraFundRequestRejected
+        - ExtraFundVoteCast
+        - FinalMilestoneAchieved
+        - FundingFailed
+        - FundingSuccessful
+        - FundsWithdrawn
+        - InvestmentReceived
+        - MilestoneVerified
+        - OwnershipTransferred
+        - PlatformFeeWithdrawn
+        - RefundClaimed
+        - SecurityTokensWithdrawn
+        - TokensPledged
+      abis:
+        - name: CrowdFunding
+          file: ./abis/CrowdFunding.json
+      eventHandlers:
+        - event: AgreementSigned(indexed address)
+          handler: handleAgreementSigned
+        - event: EmergencyToggled(bool)
+          handler: handleEmergencyToggled
+        - event: EnergyCreditRateUpdated(uint256)
+          handler: handleEnergyCreditRateUpdated
+        - event: EnergyCreditsClaimed(indexed address,uint256)
+          handler: handleEnergyCreditsClaimed
+        - event: EnergyCreditsVerified(address,uint256)
+          handler: handleEnergyCreditsVerified
+        - event: EnergyProviderSet(indexed address)
+          handler: handleEnergyProviderSet
+        - event: EnergyTokensBurned(indexed address,uint256)
+          handler: handleEnergyTokensBurned
+        - event: EnergyTokensClaimed(indexed address,uint256)
+          handler: handleEnergyTokensClaimed
+        - event: EnergyTokensReleased()
+          handler: handleEnergyTokensReleased
+        - event: ExtraFundRequestApproved(indexed uint256,indexed uint256)
+          handler: handleExtraFundRequestApproved
+        - event: ExtraFundRequestCreated(indexed uint256,bytes32,uint256,string)
+          handler: handleExtraFundRequestCreated
+        - event: ExtraFundRequestExecuted(indexed uint256,bool)
+          handler: handleExtraFundRequestExecuted
+        - event: ExtraFundRequestRejected(indexed uint256)
+          handler: handleExtraFundRequestRejected
+        - event: ExtraFundVoteCast(indexed uint256,indexed address,bool,uint256)
+          handler: handleExtraFundVoteCast
+        - event: FinalMilestoneAchieved()
+          handler: handleFinalMilestoneAchieved
+        - event: FundingFailed()
+          handler: handleFundingFailed
+        - event: FundingSuccessful()
+          handler: handleFundingSuccessful
+        - event: FundsWithdrawn(indexed uint256,uint256)
+          handler: handleFundsWithdrawn
+        - event: InvestmentReceived(indexed address,uint256)
+          handler: handleInvestmentReceived
+        - event: MilestoneVerified(indexed uint256)
+          handler: handleMilestoneVerified
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
+        - event: PlatformFeeWithdrawn(uint256)
+          handler: handlePlatformFeeWithdrawn
+        - event: RefundClaimed(indexed address,uint256)
+          handler: handleRefundClaimed
+        - event: SecurityTokensWithdrawn(indexed address,uint256)
+          handler: handleSecurityTokensWithdrawn
+        - event: TokensPledged(indexed address,uint256)
+          handler: handleTokensPledged
+      file: ./src/crowd-funding.ts
