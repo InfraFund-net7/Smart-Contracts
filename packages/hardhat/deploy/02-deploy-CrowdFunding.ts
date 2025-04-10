@@ -12,7 +12,7 @@ const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEn
   const { deploy, get } = deployments;
 
   // Get named accounts from hardhat.config.ts
-  const { deployer, auditor, generalContractor, client } = await getNamedAccounts();
+  const { deployer, auditor, generalContractor, client, infraFundWallet } = await getNamedAccounts();
 
   console.log("Deploying CrowdFunding contract with the account:", deployer);
   console.log("Network:", hre.network.name);
@@ -29,7 +29,6 @@ const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEn
 
   // Set claim period (30 days)
   const claimPeriod = 30 * 24 * 60 * 60;
-
   // Deploy CrowdFunding contract
   const crowdFundingDeployment = await deploy("CrowdFunding", {
     from: deployer,
@@ -40,6 +39,7 @@ const deployCrowdFunding: DeployFunction = async function (hre: HardhatRuntimeEn
       auditor, // Auditor address
       generalContractor, // General contractor address
       client, // Client address
+      infraFundWallet,
       claimPeriod, // Claim period
     ],
     log: true,

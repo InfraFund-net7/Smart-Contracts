@@ -122,6 +122,11 @@ const config: HardhatUserConfig = {
       sepolia: 6,
       optimismSepolia: 6,
     },
+    infraFundWallet: {
+      default: 7,
+      sepolia: 7,
+      optimismSepolia: 7,
+    },
   },
 
   networks: {
